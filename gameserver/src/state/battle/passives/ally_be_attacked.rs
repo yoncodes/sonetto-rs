@@ -245,7 +245,7 @@ pub fn inject_into_enemy_skill_step<F>(
             let mut event_ctx = EventContext {
                 fight: ctx.fight,
                 buff_mgr: &mut ctx.managers.buff_mgr,
-                ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+                entity_mgr: &mut ctx.managers.entity_mgr,
                 bloodtithe: &mut ctx.mechanics.bloodtithe,
             };
             let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx);
@@ -338,7 +338,7 @@ pub fn inject_into_enemy_skill_step<F>(
                 let mut event_ctx = EventContext {
                     fight: ctx.fight,
                     buff_mgr: &mut ctx.managers.buff_mgr,
-                    ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+                    entity_mgr: &mut ctx.managers.entity_mgr,
                     bloodtithe: &mut ctx.mechanics.bloodtithe,
                 };
                 let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx);

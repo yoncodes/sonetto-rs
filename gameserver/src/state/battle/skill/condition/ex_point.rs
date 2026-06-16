@@ -27,16 +27,16 @@ impl Condition for ExPoint {
         let condition_uid = ctx.resolve_entity_target_uid();
         match condition {
             ConditionType::PerExPoint { threshold } => {
-                Some(ctx.ex_point_mgr.get_ex_point(condition_uid) >= *threshold)
+                Some(ctx.entity_mgr.get_ex_point(condition_uid) >= *threshold)
             }
             ConditionType::PerDecrExPoint { threshold } => {
-                Some(ctx.ex_point_mgr.get_recent_decr_ex_point(condition_uid) >= *threshold)
+                Some(ctx.entity_mgr.get_recent_decr_ex_point(condition_uid) >= *threshold)
             }
             ConditionType::ExpointMoreThan { threshold } => {
-                Some(ctx.ex_point_mgr.get_ex_point(condition_uid) >= *threshold)
+                Some(ctx.entity_mgr.get_ex_point(condition_uid) >= *threshold)
             }
             ConditionType::ExpointLessThan { threshold } => {
-                Some(ctx.ex_point_mgr.get_ex_point(condition_uid) <= *threshold)
+                Some(ctx.entity_mgr.get_ex_point(condition_uid) <= *threshold)
             }
             _ => None,
         }

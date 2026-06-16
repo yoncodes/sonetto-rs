@@ -15,7 +15,7 @@ use crate::state::battle::{
     fight_step::{ActEffectBuilder, effect_container_step, make_skill_step, wrap_step},
     manager::{
         buff_mgr::{BuffMgr, next_buff_uid_for_target},
-        ex_point_mgr::ExPointMgr,
+        entity_mgr::EntityMgr,
     },
     mechanics::bloodtithe::BloodtitheState,
     types::buff::BuffLayerType,
@@ -580,7 +580,7 @@ impl EventQueue {
 pub struct EventContext<'a> {
     pub fight: &'a mut Fight,
     pub buff_mgr: &'a mut BuffMgr,
-    pub ex_point_mgr: &'a mut ExPointMgr,
+    pub entity_mgr: &'a mut EntityMgr,
     pub bloodtithe: &'a mut BloodtitheState,
 }
 
@@ -816,7 +816,7 @@ pub fn drain_to_fight_steps(
                     let new_hp = current_hp.saturating_sub(damage);
                     entity.current_hp = Some(new_hp);
                 }
-                _ctx.ex_point_mgr.apply_damage(target, damage);
+                _ctx.entity_mgr.apply_damage(target, damage);
 
                 if hurt_info.from_uid.is_none() {
                     hurt_info.from_uid = Some(from);
@@ -868,7 +868,7 @@ pub fn drain_to_fight_steps(
                         .unwrap_or(current_hp);
                     let new_hp = (current_hp + amount).min(max_hp);
                     entity.current_hp = Some(new_hp);
-                    _ctx.ex_point_mgr.set_hp(target, new_hp);
+                    _ctx.entity_mgr.set_hp(target, new_hp);
                 }
 
                 out.push(ActEffectBuilder::heal(target, amount, None));
@@ -887,13 +887,13 @@ pub fn drain_to_fight_steps(
                         .unwrap_or(current_hp);
                     let new_hp = (current_hp + amount).min(max_hp);
                     entity.current_hp = Some(new_hp);
-                    _ctx.ex_point_mgr.set_hp(target, new_hp);
+                    _ctx.entity_mgr.set_hp(target, new_hp);
                 }
 
                 out.push(ActEffectBuilder::heal_crit(target, amount));
             }
             BattleEvent::ExPointChange { target, delta } => {
-                _ctx.ex_point_mgr.add_ex_point(target, delta);
+                _ctx.entity_mgr.add_ex_point(target, delta);
                 out.push(ActEffectBuilder::ex_point_change(target, delta));
             }
             BattleEvent::PowerChange { delta } => {
@@ -1022,12 +1022,12 @@ pub fn serialize_leaf_event(event: BattleEvent) -> ActEffect {
 
     let mut fight = Fight::default();
     let mut buff_mgr = BuffMgr::new();
-    let mut ex_point_mgr = ExPointMgr::new();
+    let mut entity_mgr = EntityMgr::default();
     let mut bloodtithe = BloodtitheState::new();
     let mut ctx = EventContext {
         fight: &mut fight,
         buff_mgr: &mut buff_mgr,
-        ex_point_mgr: &mut ex_point_mgr,
+        entity_mgr: &mut entity_mgr,
         bloodtithe: &mut bloodtithe,
     };
 
@@ -1045,7 +1045,7 @@ mod tests {
     };
     use crate::state::battle::{
         fight_step::{ActEffectBuilder, effect_container_step, make_skill_step, wrap_step},
-        manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr},
+        manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
         mechanics::bloodtithe::BloodtitheState,
     };
     use sonettobuf::{ActEffect, Fight, FightEntityInfo, FightTeam, HeroAttribute};
@@ -1074,12 +1074,12 @@ mod tests {
     fn test_ctx() -> EventContext<'static> {
         let fight = Box::leak(Box::new(Fight::default()));
         let buff_mgr = Box::leak(Box::new(BuffMgr::new()));
-        let ex_point_mgr = Box::leak(Box::new(ExPointMgr::new()));
+        let entity_mgr = Box::leak(Box::new(EntityMgr::default()));
         let bloodtithe = Box::leak(Box::new(BloodtitheState::new()));
         EventContext {
             fight,
             buff_mgr,
-            ex_point_mgr,
+            entity_mgr,
             bloodtithe,
         }
     }
@@ -1189,7 +1189,7 @@ mod tests {
     fn ex_point_change_updates_manager_and_serializes() {
         let mut ctx = test_ctx();
         let uid = 77;
-        ctx.ex_point_mgr.set_ex_point(uid, 2);
+        ctx.entity_mgr.set_ex_point(uid, 2);
 
         let out = drain_to_fight_steps(
             vec![BattleEvent::ExPointChange {
@@ -1199,7 +1199,7 @@ mod tests {
             &mut ctx,
         );
 
-        assert_eq!(ctx.ex_point_mgr.get_ex_point(uid), 5);
+        assert_eq!(ctx.entity_mgr.get_ex_point(uid), 5);
         assert_eq!(out.len(), 1);
         assert_eq!(
             out[0].effect_type,
@@ -1225,7 +1225,7 @@ mod tests {
             }],
             ..Default::default()
         });
-        ctx.ex_point_mgr.set_hp(uid, 30);
+        ctx.entity_mgr.set_hp(uid, 30);
 
         let out = drain_to_fight_steps(
             vec![BattleEvent::Heal {
@@ -1244,7 +1244,7 @@ mod tests {
             .and_then(|entity| entity.current_hp)
             .expect("healed entity should remain in fight");
         assert_eq!(hp, 100);
-        assert_eq!(ctx.ex_point_mgr.get_hp(uid), 100);
+        assert_eq!(ctx.entity_mgr.get_hp(uid), 100);
         assert_eq!(out.len(), 1);
         assert_eq!(
             out[0].effect_type,
@@ -1270,7 +1270,7 @@ mod tests {
             }],
             ..Default::default()
         });
-        ctx.ex_point_mgr.set_hp(uid, 90);
+        ctx.entity_mgr.set_hp(uid, 90);
 
         let hurt = sonettobuf::FightHurtInfo {
             config_effect: Some(30006),
@@ -1296,7 +1296,7 @@ mod tests {
             .and_then(|entity| entity.current_hp)
             .expect("damaged entity should remain in fight");
         assert_eq!(hp, 55);
-        assert_eq!(ctx.ex_point_mgr.get_hp(uid), 55);
+        assert_eq!(ctx.entity_mgr.get_hp(uid), 55);
         assert_eq!(out.len(), 1);
         assert_eq!(
             out[0].effect_type,
@@ -1334,7 +1334,7 @@ mod tests {
             }],
             ..Default::default()
         });
-        ctx.ex_point_mgr.set_hp(uid, 90);
+        ctx.entity_mgr.set_hp(uid, 90);
 
         let out = drain_to_fight_steps(
             vec![BattleEvent::Damage {
@@ -1375,7 +1375,7 @@ mod tests {
             }],
             ..Default::default()
         });
-        ctx.ex_point_mgr.set_hp(uid, 30);
+        ctx.entity_mgr.set_hp(uid, 30);
 
         let out = drain_to_fight_steps(
             vec![BattleEvent::HealCrit {
@@ -1394,7 +1394,7 @@ mod tests {
             .and_then(|entity| entity.current_hp)
             .expect("healed entity should remain in fight");
         assert_eq!(hp, 100);
-        assert_eq!(ctx.ex_point_mgr.get_hp(uid), 100);
+        assert_eq!(ctx.entity_mgr.get_hp(uid), 100);
         assert_eq!(out.len(), 1);
         assert_eq!(
             out[0].effect_type,

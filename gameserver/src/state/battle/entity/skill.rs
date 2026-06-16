@@ -36,6 +36,8 @@ impl Skill {
             )
         };
 
+        Self::apply_ex_level_groups(r.hero_id, r.ex_skill_level, &mut sg1, &mut sg2);
+
         if let Some(map) = destiny {
             Self::apply_exchange(&mut sg1, map);
             Self::apply_exchange(&mut sg2, map);
@@ -58,6 +60,17 @@ impl Skill {
             .find(|c| c.id == r.hero_id)
             .map(|c| c.ex_skill)
             .unwrap_or(0);
+
+        for lvl in 1..=r.ex_skill_level {
+            if let Some(entry) = game
+                .skill_ex_level
+                .iter()
+                .find(|s| s.hero_id == r.hero_id && s.skill_level == lvl)
+                && entry.skill_ex != 0
+            {
+                ex = entry.skill_ex;
+            }
+        }
 
         if let Some(map) = destiny
             && let Some(replaced) = map.get(&ex)
@@ -188,6 +201,25 @@ impl Skill {
             }
         }
         None
+    }
+
+    fn apply_ex_level_groups(hero_id: i32, ex_level: i32, sg1: &mut Vec<i32>, sg2: &mut Vec<i32>) {
+        let game = configs::get();
+        for lvl in 1..=ex_level {
+            let Some(ex) = game
+                .skill_ex_level
+                .iter()
+                .find(|s| s.hero_id == hero_id && s.skill_level == lvl)
+            else {
+                continue;
+            };
+            if !ex.skill_group1.is_empty() {
+                *sg1 = ex.skill_group1.split('|').filter_map(|v| v.parse().ok()).collect();
+            }
+            if !ex.skill_group2.is_empty() {
+                *sg2 = ex.skill_group2.split('|').filter_map(|v| v.parse().ok()).collect();
+            }
+        }
     }
 
     fn get_from_character(hero_id: i32, group: i32) -> Vec<i32> {

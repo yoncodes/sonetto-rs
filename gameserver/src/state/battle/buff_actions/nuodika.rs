@@ -12,8 +12,8 @@ use crate::state::battle::{
     fight_step::{ActEffectBuilder, effect_container_step, wrap_step},
     manager::{
         buff_mgr::BuffMgr,
-        ex_point_mgr::ExPointMgr,
-        round_mgr::{FightRoundMgr, lookup_entry_max_hp},
+        entity_mgr::EntityMgr,
+        round_mgr::lookup_entry_max_hp,
     },
     mechanics::{bloodtithe::BloodtitheState, injury_counter, magic_circle},
     passives::{
@@ -26,7 +26,6 @@ use crate::state::battle::{
 };
 
 pub(crate) fn build_nuodika_channel_steps(
-    _mgr: &FightRoundMgr,
     ctx: &mut FightContext<'_>,
     prior_steps: &[FightStep],
     collected: &CollectedPassives,
@@ -170,7 +169,7 @@ pub(crate) fn build_nuodika_channel_steps(
             rewrite_nuodika_channel_body(
                 ctx.fight,
                 &ctx.managers.buff_mgr,
-                &ctx.managers.ex_point_mgr,
+                &ctx.managers.entity_mgr,
                 &mut channel_effects,
                 holder_uid,
                 output_skill_id,
@@ -188,12 +187,12 @@ pub(crate) fn build_nuodika_channel_steps(
             });
             let mut local_fight = Fight::default();
             let mut local_buff_mgr = BuffMgr::new();
-            let mut local_ex_point_mgr = ExPointMgr::new();
+            let mut local_entity_mgr = EntityMgr::default();
             let mut local_bloodtithe = BloodtitheState::new();
             let mut event_ctx = EventContext {
                 fight: &mut local_fight,
                 buff_mgr: &mut local_buff_mgr,
-                ex_point_mgr: &mut local_ex_point_mgr,
+                entity_mgr: &mut local_entity_mgr,
                 bloodtithe: &mut local_bloodtithe,
             };
             let mut step_effects = drain_to_fight_steps(queue.drain(), &mut event_ctx);
@@ -267,7 +266,7 @@ fn apply_step_to_simulated_hp(step: &FightStep, simulated_hp: &mut HashMap<i64, 
 pub(crate) fn rewrite_nuodika_channel_body(
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    ex_point_mgr: &ExPointMgr,
+    entity_mgr: &EntityMgr,
     skill_effects: &mut [ActEffect],
     caster_uid: i64,
     output_skill_id: i32,
@@ -366,7 +365,7 @@ pub(crate) fn rewrite_nuodika_channel_body(
     };
     let pending_attr_bonus = collect_pre_hit_attr_bonus(&skill_step.act_effect, caster_uid);
     let max_hp = lookup_entry_max_hp(fight, caster_uid)
-        .max(ex_point_mgr.get_max_hp(caster_uid))
+        .max(entity_mgr.get_max_hp(caster_uid))
         .max(
             caster
                 .base_attr

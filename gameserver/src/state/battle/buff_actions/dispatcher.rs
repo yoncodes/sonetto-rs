@@ -4,8 +4,9 @@ use sonettobuf::{ActEffect, Fight, FightStep};
 
 use super::EffectContext;
 use super::action::{BuffActCtx, BuffStage, DispatchCtx, run_registered_handler};
-use crate::state::battle::fight_step::ActEffectBuilder;
-use crate::state::battle::manager::buff_mgr::BuffInstance;
+use crate::state::battle::event::{events_to_act_effects};
+use crate::state::battle::manager::{buff_mgr::BuffInstance, fight_data_mgr::Managers};
+use crate::state::battle::context::hook_call;
 use crate::state::battle::skill::get_entity;
 use crate::state::battle::types::effects::EffectType;
 
@@ -91,7 +92,8 @@ pub fn dispatch_stage(stage: BuffStage, ctx: &mut DispatchCtx<'_, '_>) -> Vec<Ac
         }
     }
 
-    append_stage_postprocess(stage, ctx.effect_ctx.fight(), &mut out);
+    let fight = ctx.effect_ctx.fight().clone();
+    append_stage_postprocess(stage, &fight, ctx.effect_ctx.managers, &mut out);
 
     tracing::debug!(
         target: "buff_act_dispatch",
@@ -186,13 +188,13 @@ fn iter_entity_uids_in_order(fight: &Fight, alive_only: bool) -> Vec<i64> {
     out
 }
 
-fn append_stage_postprocess(stage: BuffStage, fight: &Fight, effects: &mut Vec<ActEffect>) {
+fn append_stage_postprocess(stage: BuffStage, fight: &Fight, managers: &mut Managers, effects: &mut Vec<ActEffect>) {
     if stage == BuffStage::RoundEndDot {
-        append_round_end_dot_dead_effects(fight, effects);
+        append_round_end_dot_dead_effects(fight, managers, effects);
     }
 }
 
-fn append_round_end_dot_dead_effects(fight: &Fight, effects: &mut Vec<ActEffect>) {
+fn append_round_end_dot_dead_effects(fight: &Fight, managers: &mut Managers, effects: &mut Vec<ActEffect>) {
     let mut hp_state = std::collections::HashMap::<i64, (i32, i32)>::new();
     let mut killed_in_order = Vec::new();
 
@@ -239,7 +241,9 @@ fn append_round_end_dot_dead_effects(fight: &Fight, effects: &mut Vec<ActEffect>
         }
     }
 
-    effects.extend(killed_in_order.into_iter().map(ActEffectBuilder::dead));
+    effects.extend(killed_in_order.into_iter().flat_map(|target_id| {
+        events_to_act_effects(hook_call::on_dead(managers, fight, target_id))
+    }));
 }
 
 fn collect_dead_targets(effects: &[ActEffect], out: &mut HashSet<i64>) {

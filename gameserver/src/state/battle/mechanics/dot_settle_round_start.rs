@@ -141,6 +141,7 @@ pub fn build_round_start_dot_settle_steps(ctx: &FightContext<'_>) -> Vec<FightSt
             )];
             if entity_will_die_from(ctx, carrier_uid, total_damage) {
                 effects.push(ActEffectBuilder::dead(carrier_uid));
+                effects.push(ActEffectBuilder::remove_entity_cards(carrier_uid, Some(1)));
             }
             let inner = make_skill_step(carrier_uid, carrier_uid, settle_skill_id, 0, effects);
             wrappers.push(wrap_step(inner));

@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 use super::super::{BehaviorType, ConditionType};
-use super::{behavior::parser::parse_behavior, condition::parser::parse_condition};
+use super::condition::parser::parse_condition;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedBehavior {
@@ -134,7 +134,7 @@ fn build_cache() -> HashMap<i32, Vec<ResolvedBehavior>> {
                     negated,
                     condition_target: parse_logic_target(ct),
                     round_limit,
-                    behavior: parse_behavior(b),
+                    behavior: BehaviorType::Unknown { raw: b.to_string() },
                     behavior_target: parse_logic_target(bt),
                     logic_target: skill.logic_target.parse().unwrap_or(0),
                 }

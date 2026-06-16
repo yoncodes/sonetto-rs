@@ -810,6 +810,7 @@ impl ActEffectBuilder {
             .build()
     }
 
+
     pub fn cards_push(card_info_list: Vec<CardInfo>, team_type: Option<i32>) -> ActEffect {
         tracing::trace!(
             target: "act_effects",
@@ -822,6 +823,15 @@ impl ActEffectBuilder {
             builder = builder.team_type(team_type);
         }
         builder.build()
+    }
+
+    pub fn remove_entity_cards(target_uid: i64, team_type: Option<i32>) -> ActEffect {
+        tracing::trace!(target: "act_effects", kind = "remove_entity_cards", target_uid);
+        let inner = Self::new(BattleEffectType::RemoveEntityCards as i32, target_uid)
+            .team_type(team_type.unwrap_or(1))
+            .build();
+        let step = effect_container_step(0, 0, 0, vec![inner]);
+        Self::skill_wrapper(step)
     }
 
     pub fn new_change_wave(fight: Fight) -> ActEffect {
@@ -949,6 +959,20 @@ impl ActEffectBuilder {
         Self::new(BattleEffectType::Shield as i32, target)
             .effect_num(amount)
             .build()
+    }
+
+    pub fn shield_change(target: i64, current: i32) -> ActEffect {
+        Self::new(BattleEffectType::ShieldChange as i32, target)
+            .effect_num(current)
+            .build()
+    }
+
+    pub fn shield_broken(target: i64) -> ActEffect {
+        Self::new(BattleEffectType::ShieldBroken as i32, target).build()
+    }
+
+    pub fn shield_del(target: i64) -> ActEffect {
+        Self::new(BattleEffectType::ShieldDel as i32, target).build()
     }
 
     pub fn poison(target: i64) -> ActEffect {
@@ -1236,6 +1260,16 @@ impl ActEffectBuilder {
         builder.build()
     }
 
+    pub fn change_hero(dead_uid: i64, sub_entity: sonettobuf::FightEntityInfo, position: i32) -> ActEffect {
+        ActEffect {
+            effect_type: Some(BattleEffectType::ChangeHero as i32),
+            target_id: Some(dead_uid),
+            effect_num: Some(position),
+            entity: Some(sub_entity),
+            ..Default::default()
+        }
+    }
+
     pub fn small_round_end(target: Option<i64>, effect_num: i32) -> ActEffect {
         tracing::trace!(
             target: "act_effects",
@@ -1273,6 +1307,14 @@ impl ActEffectBuilder {
             builder = builder.team_type(team_type);
         }
         builder.build()
+    }
+
+    pub fn after_redeal_card(card_info_list: Vec<CardInfo>) -> ActEffect {
+        tracing::trace!(target: "act_effects", kind = "after_redeal_card", card_count = card_info_list.len());
+        Self::new(BattleEffectType::AfterReDealCard as i32, 0)
+            .card_info_list(card_info_list)
+            .team_type(1)
+            .build()
     }
 
     pub fn change_round(target: Option<i64>, effect_num: Option<i32>) -> ActEffect {
@@ -1332,19 +1374,12 @@ impl ActEffectBuilder {
 
     pub fn deal_card1() -> ActEffect {
         tracing::trace!(target: "act_effects", kind = "deal_card1");
-        Self::bare(BattleEffectType::DealCard1 as i32).build()
+        Self::new(BattleEffectType::DealCard1 as i32, 0).build()
     }
 
-    pub fn deal_card2(target: i64, effect_num: i32) -> ActEffect {
-        tracing::trace!(
-            target: "act_effects",
-            kind = "deal_card2",
-            target,
-            effect_num
-        );
-        Self::new(BattleEffectType::DealCard2 as i32, target)
-            .effect_num(effect_num)
-            .build()
+    pub fn deal_card2() -> ActEffect {
+        tracing::trace!(target: "act_effects", kind = "deal_card2");
+        Self::new(BattleEffectType::DealCard2 as i32, 0).build()
     }
 
     pub fn sp_card_add(target: i64, effect_num: i32, reserve_id: i64, team_type: i32) -> ActEffect {
@@ -1659,6 +1694,12 @@ impl FightStepBuilder {
             real_skill_type: Some(0),
             real_skin_id: Some(0),
         }
+    }
+
+    pub fn ex_point_change(uid: i64, delta: i32) -> FightStep {
+        Self::effect()
+            .with(ActEffectBuilder::ex_point_change(uid, delta))
+            .build()
     }
 
     pub fn wrap(self) -> ActEffect {

@@ -1,5 +1,4 @@
 use super::super::BattleContext;
-use super::super::passives::collector::{collect_battle_passives, inject_battle_passives};
 use super::attacker::Attacker;
 use super::defender::Defender;
 use anyhow::Result;
@@ -40,8 +39,9 @@ pub async fn build_fight(
         progress_list: vec![],
     };
 
-    let passives = collect_battle_passives(ctx.battle_id);
-    inject_battle_passives(&mut fight, &passives);
+    //Use rule_mgr to manage battle passives
+    //let passives = collect_battle_passives(ctx.battle_id);
+    //inject_battle_passives(&mut fight, &passives);
 
     Ok(BuiltFight { fight })
 }

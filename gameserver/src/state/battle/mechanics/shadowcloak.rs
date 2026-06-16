@@ -1,6 +1,6 @@
 use super::super::{
     fight_step::{ActEffectBuilder, FightStepBuilder},
-    manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr},
+    manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
     utils::find_entity,
 };
 use sonettobuf::{ActEffect, Fight, FightStep};
@@ -58,7 +58,7 @@ impl ShadowCloakState {
         &self,
         fight: &Fight,
         buff_mgr: &BuffMgr,
-        ex_point_mgr: &ExPointMgr,
+        entity_mgr: &EntityMgr,
     ) -> Vec<ActEffect> {
         let gain = self.last_gain_shared;
         tracing::warn!(
@@ -80,7 +80,7 @@ impl ShadowCloakState {
             .unwrap_or_default();
 
         for uid in uids {
-            let current_hp = ex_point_mgr.get_hp(uid);
+            let current_hp = entity_mgr.get_hp(uid);
             let base_max_hp = find_entity(fight, uid)
                 .and_then(|e| e.attr.as_ref().and_then(|a| a.hp))
                 .unwrap_or(0);
@@ -114,12 +114,12 @@ impl ShadowCloakState {
         &mut self,
         fight: &Fight,
         buff_mgr: &BuffMgr,
-        ex_point_mgr: &ExPointMgr,
+        entity_mgr: &EntityMgr,
     ) -> Option<FightStep> {
         if !self.is_active() {
             return None;
         }
-        let effects = self.build_sync_effects(fight, buff_mgr, ex_point_mgr);
+        let effects = self.build_sync_effects(fight, buff_mgr, entity_mgr);
         self.reset_tick();
         if effects.is_empty() {
             return None;

@@ -507,3 +507,31 @@ pub fn modify_hero_attr(entity: &mut FightEntityInfo, attr_id: i32, amount_permi
         _ => tracing::warn!("modify_hero_attr: unhandled attr_id={}", attr_id),
     }
 }
+
+pub fn find_entity_mut(fight: &mut Fight, uid: i64) -> Option<&mut FightEntityInfo> {
+    for team in fight.attacker.iter_mut().chain(fight.defender.iter_mut()) {
+        if let Some(entity) = team
+            .entitys
+            .iter_mut()
+            .find(|entity| entity.uid == Some(uid))
+        {
+            return Some(entity);
+        }
+        if let Some(entity) = team
+            .sub_entitys
+            .iter_mut()
+            .find(|entity| entity.uid == Some(uid))
+        {
+            return Some(entity);
+        }
+    }
+    None
+}
+
+pub fn gains_standard_action_ex(fight: &Fight, uid: i64) -> bool {
+    get_entity(fight, uid)
+        .and_then(|entity| entity.ex_point_type)
+        .and_then(super::types::ex_point::ExPointType::from_i32)
+        .map(|ex_type| ex_type.gains_from_standard_actions())
+        .unwrap_or(false)
+}

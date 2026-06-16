@@ -36,8 +36,6 @@ pub mod guide;
 pub mod hero_trial;
 pub mod insight_item;
 pub mod item;
-pub mod language_en;
-pub mod language_server_en;
 pub mod magic_circle;
 pub mod monster;
 pub mod monster_group;
@@ -52,7 +50,6 @@ pub mod skill;
 pub mod skill_behavior;
 pub mod skill_behavior_condition;
 pub mod skill_buff;
-pub mod skill_buff_self_refresh;
 pub mod skill_bufftype;
 pub mod skill_effect;
 pub mod skill_ex_level;
@@ -107,8 +104,6 @@ pub struct GameDB {
     pub hero_trial: hero_trial::HeroTrialTable,
     pub insight_item: insight_item::InsightItemTable,
     pub item: item::ItemTable,
-    pub language_en: language_en::LanguageEnTable,
-    pub language_server_en: language_server_en::LanguageServerEnTable,
     pub magic_circle: magic_circle::MagicCircleTable,
     pub monster: monster::MonsterTable,
     pub monster_group: monster_group::MonsterGroupTable,
@@ -123,7 +118,6 @@ pub struct GameDB {
     pub skill_behavior: skill_behavior::SkillBehaviorTable,
     pub skill_behavior_condition: skill_behavior_condition::SkillBehaviorConditionTable,
     pub skill_buff: skill_buff::SkillBuffTable,
-    pub skill_buff_self_refresh: skill_buff_self_refresh::SkillBuffSelfRefreshTable,
     pub skill_bufftype: skill_bufftype::SkillBufftypeTable,
     pub skill_effect: skill_effect::SkillEffectTable,
     pub skill_ex_level: skill_ex_level::SkillExLevelTable,
@@ -250,12 +244,6 @@ impl GameDB {
         let item = item::ItemTable::load(
             &format!("{}/item.json", data_dir)
         ).map_err(|e| anyhow::anyhow!("Failed to load item.json: {}", e))?;
-        let language_en = language_en::LanguageEnTable::load(
-            &format!("{}/language_en.json", data_dir)
-        ).map_err(|e| anyhow::anyhow!("Failed to load language_en.json: {}", e))?;
-        let language_server_en = language_server_en::LanguageServerEnTable::load(
-            &format!("{}/language_server_en.json", data_dir)
-        ).map_err(|e| anyhow::anyhow!("Failed to load language_server_en.json: {}", e))?;
         let magic_circle = magic_circle::MagicCircleTable::load(
             &format!("{}/magic_circle.json", data_dir)
         ).map_err(|e| anyhow::anyhow!("Failed to load magic_circle.json: {}", e))?;
@@ -298,9 +286,6 @@ impl GameDB {
         let skill_buff = skill_buff::SkillBuffTable::load(
             &format!("{}/skill_buff.json", data_dir)
         ).map_err(|e| anyhow::anyhow!("Failed to load skill_buff.json: {}", e))?;
-        let skill_buff_self_refresh = skill_buff_self_refresh::SkillBuffSelfRefreshTable::load(
-            &format!("{}/skill_buff_self_refresh.json", data_dir)
-        ).map_err(|e| anyhow::anyhow!("Failed to load skill_buff_self_refresh.json: {}", e))?;
         let skill_bufftype = skill_bufftype::SkillBufftypeTable::load(
             &format!("{}/skill_bufftype.json", data_dir)
         ).map_err(|e| anyhow::anyhow!("Failed to load skill_bufftype.json: {}", e))?;
@@ -381,8 +366,6 @@ impl GameDB {
             hero_trial,
             insight_item,
             item,
-            language_en,
-            language_server_en,
             magic_circle,
             monster,
             monster_group,
@@ -397,7 +380,6 @@ impl GameDB {
             skill_behavior,
             skill_behavior_condition,
             skill_buff,
-            skill_buff_self_refresh,
             skill_bufftype,
             skill_effect,
             skill_ex_level,

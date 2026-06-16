@@ -22,7 +22,7 @@ impl BuffActionHandler for ShieldHandler {
             .get(3)
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(0);
-        let max_hp = ctx
+        let max_hp: i32 = ctx
             .effect_ctx
             .target_entity()
             .and_then(|e| e.attr.as_ref().and_then(|a| a.hp))

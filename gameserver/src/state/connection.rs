@@ -40,17 +40,11 @@ pub struct ActiveBattle {
     pub chapter_id: i32,
     pub difficulty: Option<i32>,
     pub talent_plan_id: Option<i32>,
-    pub fight: Option<sonettobuf::Fight>, // Current battle state
-    pub current_round: i32,
-    pub act_point: i32, //  Remaining action points
-    pub power: i32,
-    pub current_deck: Vec<sonettobuf::CardInfo>,
     pub fight_group: Option<sonettobuf::FightGroup>,
     pub fight_id: Option<i64>,
     pub is_replay: Option<bool>,
     pub replay_episode_id: Option<i32>,
     pub multiplication: Option<i32>,
-    pub ai_deck: Vec<sonettobuf::CardInfo>,
     pub fight_data_mgr: Option<FightDataMgr>,
 }
 

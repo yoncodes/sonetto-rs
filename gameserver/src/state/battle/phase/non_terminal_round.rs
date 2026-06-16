@@ -16,13 +16,18 @@ use sonettobuf::{ActEffect, CardInfo, FightStep};
 use crate::state::battle::{
     buff_actions::{self, BuffStage, round_end as round_end_handler},
     context::FightContext,
+    deck::DeckManager,
     fight_step::{ActEffectBuilder, FightStepBuilder, effect_container_step, wrap_step},
     heroes::rubuska,
     manager::{
         buff_mgr::{LifecycleEventKind, reset_buff_uid_to},
-        card_mgr::FightCardMgr,
-        ex_point_mgr::sync_from_fight,
-        round_mgr::{BattleEndState, FightRoundMgr, seed_entry_max_hp_from_fight},
+        entity_mgr::sync_from_fight,
+        round_mgr::{
+            BattleEndState, apply_passive_phase, apply_step_and_maybe_sync, check_battle_end,
+            check_battle_state, collect_round_tied_defender_passive_steps,
+            deleted_buff_ids_from_delta, expand_trigger_chain, first_alive_defender_uid,
+            get_max_wave, seed_entry_max_hp_from_fight,
+        },
         traits::Manager,
     },
     mechanics::{advanced_cure, bloodtithe, channel as channel_mechanics},
@@ -42,20 +47,18 @@ use crate::state::battle::{
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
-    mgr: &FightRoundMgr,
     rng: &mut StdRng,
     ctx: &mut FightContext<'_>,
-    card_mgr: &mut FightCardMgr,
+    executor: &mut SkillExecutor,
     state: &mut RoundState,
     selected_for_round_end: Vec<CardInfo>,
-    deck_num: i32,
     collected: &CollectedPassives,
     defender_uid_checkpoint: i64,
+    deck_mgr: &mut DeckManager,
     steps: &mut Vec<FightStep>,
 ) -> Result<()> {
     if state.is_finish {
         round_end_emission::emit_terminal_round_steps(
-            mgr,
             ctx,
             selected_for_round_end,
             collected,
@@ -82,7 +85,7 @@ pub(crate) async fn run(
     // so pure-c100 (e.g. Sotheby's `30090146` Duality Potion grant) now
     // fires here too, restoring LIVE's holder-layer-vs-attack-time
     // ordering.
-    mgr.apply_passive_phase(
+    apply_passive_phase(
         ctx,
         collected,
         PassivePhaseConfig {
@@ -94,9 +97,29 @@ pub(crate) async fn run(
         true,
         steps,
     )?;
-    steps.extend(build_pre_enemy_transition_steps(deck_num));
+    steps.extend(build_pre_enemy_transition_steps(
+        deck_mgr.player_deck.len() as i32
+    ));
+    if let Some((dead_uid, sub_entity, position)) = ctx.managers.entity_mgr.sub_hero(ctx.fight) {
+        let sub_uid = sub_entity.uid.unwrap_or(0);
+        ctx.managers.passive_mgr.seed_entity(&sub_entity);
+        if sub_uid != 0 {
+            let fight = &*ctx.fight;
+            ctx.managers.rule_mgr.seed_entity_uid(sub_uid, fight);
+        }
+        steps.push(
+            FightStepBuilder::effect()
+                .with(ActEffectBuilder::change_hero(
+                    dead_uid, sub_entity, position,
+                ))
+                .build(),
+        );
+        if sub_uid != 0 {
+            let events = ctx.on_enter_fight(sub_uid);
+        }
+    }
     let defender_bootstrap_start = steps.len();
-    mgr.apply_passive_phase(
+    apply_passive_phase(
         ctx,
         collected,
         PassivePhaseConfig {
@@ -108,7 +131,7 @@ pub(crate) async fn run(
         true,
         steps,
     )?;
-    let boss_wrappers = mgr.collect_round_tied_defender_passive_steps(ctx, collected);
+    let boss_wrappers = collect_round_tied_defender_passive_steps(ctx, collected);
     if !boss_wrappers.is_empty()
         && let Some(boss_subtree) =
             step_walker::find_bootstrap_nested_effects_mut(&mut steps[defender_bootstrap_start..])
@@ -131,7 +154,7 @@ pub(crate) async fn run(
                     collected,
                     step,
                     &|ctx, reactive_step| {
-                        if let Err(err) = mgr.apply_step_and_maybe_sync(ctx, reactive_step, true) {
+                        if let Err(err) = apply_step_and_maybe_sync(ctx, reactive_step, true) {
                             tracing::warn!(
                                 "ally be_attacked inline reactive apply failed act_id={:?}: {}",
                                 reactive_step.act_id,
@@ -146,23 +169,26 @@ pub(crate) async fn run(
                     step,
                     &reactive_target_skills,
                     &|ctx, collected, root, deleted| {
-                        mgr.expand_trigger_chain(ctx, collected, root, deleted)
+                        expand_trigger_chain(ctx, collected, root, deleted)
                     },
-                    &|before, after| mgr.deleted_buff_ids_from_delta(before, after),
+                    &|before, after| deleted_buff_ids_from_delta(before, after),
                 );
             },
         );
     }
 
     reset_buff_uid_to(defender_uid_checkpoint);
-    phase::enemy_actions::run(mgr, rng, ctx, card_mgr, state, collected, steps).await?;
+
+    // Enemy actions
+    phase::enemy_actions::run(rng, ctx, executor, state, collected, steps).await?;
+
     let injected_channel_buffs =
-        channel_mechanics::inject_channel_followup_buffs_if_missing(mgr, ctx, collected, steps);
+        channel_mechanics::inject_channel_followup_buffs_if_missing(ctx, collected, steps);
 
     // Live parity: run a passive combat sweep for defender side after AI actions.
     // This emits nested trigger/follow-up 162 steps before round-end transitions.
     let defender_sweep_start = steps.len();
-    mgr.apply_passive_phase(
+    apply_passive_phase(
         ctx,
         collected,
         PassivePhaseConfig {
@@ -191,7 +217,7 @@ pub(crate) async fn run(
         // without committing buff_mgr state.
         let mut broadcast = if ctx.fight.cur_round.unwrap_or(1) == 1 {
             let buff_snapshot = ctx.managers.buff_mgr.clone();
-            ctx.managers.buff_mgr.on_round_end();
+            ctx.managers.buff_mgr.tick_round_end();
             let out = broadcast::collect_buff_tick_broadcast(ctx, false);
             ctx.managers.buff_mgr = buff_snapshot;
             out
@@ -257,7 +283,7 @@ pub(crate) async fn run(
     }
 
     if let Some(step) = round_end_handler::build_round_end_lost_hp_count_add_buff_step(ctx) {
-        mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+        apply_step_and_maybe_sync(ctx, &step, true)?;
         steps.push(step);
     }
 
@@ -272,13 +298,13 @@ pub(crate) async fn run(
     if !dot_effects.is_empty() {
         let mut step = build_effect_step(dot_effects);
         buff_actions::dedupe_dead_effects_against_prior_steps(&mut step, steps);
-        mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+        apply_step_and_maybe_sync(ctx, &step, true)?;
         steps.push(step);
     }
 
     let cur_wave = ctx.fight.cur_wave.unwrap_or(1);
-    let max_wave = mgr.get_max_wave(ctx.fight);
-    let battle_state = mgr.check_battle_state(ctx.fight, cur_wave, max_wave);
+    let max_wave = get_max_wave(ctx.fight);
+    let battle_state = check_battle_state(ctx.fight, cur_wave, max_wave);
     let wave_cleared = matches!(battle_state, BattleEndState::WaveCleared);
     if matches!(
         battle_state,
@@ -293,9 +319,27 @@ pub(crate) async fn run(
             .with(ActEffectBuilder::small_round_end(None, 1))
             .build(),
     );
-    if let Some(caster_uid) = mgr.first_alive_defender_uid(ctx.fight)
+    if let Some((dead_uid, sub_entity, position)) = ctx.managers.entity_mgr.sub_hero(ctx.fight) {
+        let sub_uid = sub_entity.uid.unwrap_or(0);
+        ctx.managers.passive_mgr.seed_entity(&sub_entity);
+        if sub_uid != 0 {
+            let fight = &*ctx.fight;
+            ctx.managers.rule_mgr.seed_entity_uid(sub_uid, fight);
+        }
+        steps.push(
+            FightStepBuilder::effect()
+                .with(ActEffectBuilder::change_hero(
+                    dead_uid, sub_entity, position,
+                ))
+                .build(),
+        );
+        if sub_uid != 0 {
+            steps.extend(crate::state::battle::event::apply::events_to_steps(ctx.on_enter_fight(sub_uid)));
+        }
+    }
+    if let Some(caster_uid) = first_alive_defender_uid(ctx.fight)
         && state.enemy_skill_actors.contains(&caster_uid)
-        && let Some(ex_step) = ex_gain::standard_action_ex_gain_for_uid(mgr, ctx, caster_uid)
+        && let Some(ex_step) = ex_gain::standard_action_ex_gain_for_uid(ctx, caster_uid)
     {
         steps.push(ex_step);
     }
@@ -306,6 +350,7 @@ pub(crate) async fn run(
             .with(ActEffectBuilder::clear_universal_card(None, None, Some(1)))
             .build(),
     );
+    deck_mgr.clear_universal_card();
     // Skip the magic-circle duration tick only when the battle
     // itself is finishing (state.is_finish or check_battle_end true).
     // LIVE keeps ticking the circle through wave-clear rounds — the
@@ -314,9 +359,9 @@ pub(crate) async fn run(
     // wave-spawn). Self-only circles (Semmelweis 100051) are still
     // skipped inside `build_round_end_magic_circle_step` via the
     // `has_enemy_side` config check, so battle2 r2 stays clean.
-    if !state.is_finish && !mgr.check_battle_end(ctx.fight) {
+    if !state.is_finish && !check_battle_end(ctx.fight) {
         if let Some(step) = build_round_end_magic_circle_step(ctx) {
-            mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+            apply_step_and_maybe_sync(ctx, &step, true)?;
             steps.push(step);
         }
     }
@@ -333,7 +378,7 @@ pub(crate) async fn run(
         let mut wave_mgr = std::mem::take(&mut ctx.managers.wave_mgr);
         let wave_steps = wave_mgr.advance_wave(ctx, &mut wave_executor)?;
         ctx.managers.wave_mgr = wave_mgr;
-        sync_from_fight(ctx.fight, &mut ctx.managers.ex_point_mgr);
+        sync_from_fight(ctx.fight, &mut ctx.managers.entity_mgr);
         for uid in old_defender_uids {
             ctx.managers.buff_mgr.clear(uid);
         }
@@ -350,14 +395,20 @@ pub(crate) async fn run(
     // post-round-start passive sweeps execute.
     ctx.managers.buff_mgr.reset_skill_slot_round_usage();
     let round_start_tail_start = steps.len();
-    run_post_change_round_tail(mgr, ctx, collected, steps, deck_num, injected_channel_buffs)?;
+    run_post_change_round_tail(
+        ctx,
+        collected,
+        steps,
+        deck_mgr.player_deck.len() as i32,
+        injected_channel_buffs,
+    )?;
 
     // LIVE still applies the downstream Shadow Cloak / bloodpool state updates
     // on terminal transitions, but it does not surface the visible
     // `31250151` Shadow Friend HP-loss wrapper when the same round-start tail
     // ends the battle. Suppress only that packet shape after the full tail
     // resolves so runtime state remains unchanged.
-    if mgr.check_battle_end(ctx.fight) {
+    if check_battle_end(ctx.fight) {
         suppress_terminal_shadow_friend_packets(steps, round_start_tail_start);
     }
 
@@ -365,7 +416,6 @@ pub(crate) async fn run(
 }
 
 fn run_post_change_round_tail(
-    mgr: &FightRoundMgr,
     ctx: &mut FightContext<'_>,
     collected: &CollectedPassives,
     steps: &mut Vec<FightStep>,
@@ -376,13 +426,13 @@ fn run_post_change_round_tail(
 
     // Battle2 bloodtithe parity: live re-runs the same blood-pool pipeline
     // here that battle start uses before the next-round attacker sweep.
-    for step in bloodtithe::build_round_transition_bloodtithe_steps(mgr, ctx, collected) {
-        mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+    for step in bloodtithe::build_round_transition_bloodtithe_steps(ctx, collected) {
+        apply_step_and_maybe_sync(ctx, &step, true)?;
         steps.push(step);
     }
 
     // Post-round-start battle-rule passives on attacker side (e.g. global rule skills).
-    mgr.apply_passive_phase(
+    apply_passive_phase(
         ctx,
         collected,
         PassivePhaseConfig {
@@ -397,7 +447,7 @@ fn run_post_change_round_tail(
 
     // Post-round-start attacker sweep.
     let attacker_sweep_start = steps.len();
-    mgr.apply_passive_phase(
+    apply_passive_phase(
         ctx,
         collected,
         PassivePhaseConfig {
@@ -447,7 +497,7 @@ fn run_post_change_round_tail(
     // omitted; the existing round-end-tick broadcast collector
     // covers buff snapshot duties.
     if let Some(step) = advanced_cure::build_round_end_advanced_cure_step(ctx) {
-        mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+        apply_step_and_maybe_sync(ctx, &step, true)?;
         steps.push(step);
     }
 

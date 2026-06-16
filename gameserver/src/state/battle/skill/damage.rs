@@ -12,7 +12,6 @@ use sonettobuf::{
     fight_hurt_info::DamageFromType,
     {ActEffect, Fight, effect_type_enum::EffectType},
 };
-use std::collections::HashMap;
 
 fn fight_const_i32(id: i32, default: i32) -> i32 {
     config::configs::get()
@@ -54,12 +53,6 @@ fn has_behavioral_crit_override(buff_mgr: &BuffMgr, entity_uid: i64, want: &str)
         }
     }
     false
-}
-
-fn pending_attr_bonus(pending: Option<&HashMap<(i64, i32), i32>>, uid: i64, attr_id: i32) -> i32 {
-    pending
-        .and_then(|m| m.get(&(uid, attr_id)).copied())
-        .unwrap_or(0)
 }
 
 /// Per-hero base `exAttr.(dropDmg, addDmg)` keyed by hero_id (= entity
@@ -113,21 +106,21 @@ fn static_ex_attr_add_dmg(fight: &Fight, uid: i64) -> i32 {
 pub fn should_crit_hit(
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    pending_attr: Option<&HashMap<(i64, i32), i32>>,
+    entity_mgr: &crate::state::battle::manager::entity_mgr::EntityMgr,
     caster_uid: i64,
     target_uid: i64,
     skill_id: i32,
 ) -> bool {
-    if has_behavioral_crit_override(buff_mgr, caster_uid, "MustCrit")
-        || has_behavioral_crit_override(buff_mgr, caster_uid, "MustCritBuff")
-    {
-        return true;
-    }
-    if has_behavioral_crit_override(buff_mgr, caster_uid, "CantCrit")
-        || has_behavioral_crit_override(buff_mgr, target_uid, "CantCrit")
-    {
-        return false;
-    }
+    // if has_behavioral_crit_override(buff_mgr, caster_uid, "MustCrit")
+    //     || has_behavioral_crit_override(buff_mgr, caster_uid, "MustCritBuff")
+    // {
+    //     return true;
+    // }
+    // if has_behavioral_crit_override(buff_mgr, caster_uid, "CantCrit")
+    //     || has_behavioral_crit_override(buff_mgr, target_uid, "CantCrit")
+    // {
+    //     return false;
+    // }
 
     let Some(caster) = get_entity(fight, caster_uid) else {
         return false;
@@ -137,10 +130,8 @@ pub fn should_crit_hit(
     };
 
     // Crit/Recrit are permille-style attrs from buff features (Attr ids 201/202).
-    let mut crit_permille = get_attr_bonus(buff_mgr, fight, caster_uid, 201)
-        + pending_attr_bonus(pending_attr, caster_uid, 201);
-    let recrit_permille = get_attr_bonus(buff_mgr, fight, target_uid, 202)
-        + pending_attr_bonus(pending_attr, target_uid, 202);
+    let mut crit_permille = entity_mgr.sum_attr_bonus(caster_uid, 201);
+    let recrit_permille = entity_mgr.sum_attr_bonus(target_uid, 202);
 
     // CharacterModel.lua:
     // add_cri = floor(technic * const11 / (const13 + target_level*const14))
@@ -174,7 +165,7 @@ pub fn should_crit_hit(
 pub fn calculate_damage(
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    pending_attr: Option<&HashMap<(i64, i32), i32>>,
+    entity_mgr: &crate::state::battle::manager::entity_mgr::EntityMgr,
     caster_uid: i64,
     target_uid: i64,
     base_param: i32,
@@ -195,31 +186,35 @@ pub fn calculate_damage(
         .as_ref()
         .and_then(|a| a.defense)
         .unwrap_or(50)
-        .saturating_add(pending_attr_bonus(pending_attr, target_uid, 103));
-    let caster_attack = if let Some((source_attr, replace_attr, permille)) =
-        get_attr_replace_damage(buff_mgr, caster_uid)
-    {
-        if AttrId::from(source_attr) == Some(AttrId::Attack) {
-            let replace_val = match AttrId::from(replace_attr) {
-                Some(AttrId::Hp) => caster_attr.hp.unwrap_or(0),
-                Some(AttrId::CurrentHp) => caster.current_hp.unwrap_or(0),
-                Some(AttrId::Attack) => caster_attr.attack.unwrap_or(0),
-                _ => caster_attr.attack.unwrap_or(0),
-            };
-            replace_val.saturating_mul(permille) / 1000
-                + pending_attr_bonus(pending_attr, caster_uid, 102)
-        } else {
-            caster_attr
-                .attack
-                .unwrap_or(100)
-                .saturating_add(pending_attr_bonus(pending_attr, caster_uid, 102))
-        }
-    } else {
-        caster_attr
-            .attack
-            .unwrap_or(100)
-            .saturating_add(pending_attr_bonus(pending_attr, caster_uid, 102))
-    };
+        .saturating_add(entity_mgr.sum_attr_bonus(target_uid, 103));
+    // let caster_attack = if let Some((source_attr, replace_attr, permille)) =
+    //     get_attr_replace_damage(buff_mgr, caster_uid)
+    // {
+    //     if AttrId::from(source_attr) == Some(AttrId::Attack) {
+    //         let replace_val = match AttrId::from(replace_attr) {
+    //             Some(AttrId::Hp) => caster_attr.hp.unwrap_or(0),
+    //             Some(AttrId::CurrentHp) => caster.current_hp.unwrap_or(0),
+    //             Some(AttrId::Attack) => caster_attr.attack.unwrap_or(0),
+    //             _ => caster_attr.attack.unwrap_or(0),
+    //         };
+    //         replace_val.saturating_mul(permille) / 1000
+    //             + pending_attr_bonus(pending_attr, caster_uid, 102)
+    //     } else {
+    //         caster_attr
+    //             .attack
+    //             .unwrap_or(100)
+    //             .saturating_add(pending_attr_bonus(pending_attr, caster_uid, 102))
+    //     }
+    // } else {
+    //     caster_attr
+    //         .attack
+    //         .unwrap_or(100)
+    //         .saturating_add(pending_attr_bonus(pending_attr, caster_uid, 102))
+    // };
+    let caster_attack = caster_attr
+        .attack
+        .unwrap_or(100)
+        .saturating_add(entity_mgr.sum_attr_bonus(caster_uid, 102));
     // Live-like mitigation is ratio-based instead of flat subtraction.
     let attack_contribution = if caster_attack <= 0 {
         0
@@ -227,10 +222,8 @@ pub fn calculate_damage(
         ((caster_attack as i64 * 1000) / (1000 + target_defense.max(0) as i64)) as i32
     };
     let skill_multiplier = base_param as f32 / 1000.0;
-    let crit_dmg = get_attr_bonus(buff_mgr, fight, caster_uid, 203)
-        + pending_attr_bonus(pending_attr, caster_uid, 203);
-    let crit_def = get_attr_bonus(buff_mgr, fight, target_uid, 204)
-        + pending_attr_bonus(pending_attr, target_uid, 204);
+    let crit_dmg = entity_mgr.sum_attr_bonus(caster_uid, 203);
+    let crit_def = entity_mgr.sum_attr_bonus(target_uid, 204);
     let crit_multiplier = if is_crit {
         // fight_const id 12 is stored as percent (e.g. 150), convert to permille lane (1500)
         // to stay compatible with the existing damage multiplier pipeline.
@@ -255,10 +248,8 @@ pub fn calculate_damage(
     // base exAttr into `FightEntityInfo.attr`, so `static_ex_attr_*`
     // hardcodes them per-hero as a stopgap until the login-time loader
     // is wired in.
-    let add_dmg = get_attr_bonus(buff_mgr, fight, caster_uid, 205)
-        + pending_attr_bonus(pending_attr, caster_uid, 205);
-    let drop_dmg = get_attr_bonus(buff_mgr, fight, target_uid, 206)
-        + pending_attr_bonus(pending_attr, target_uid, 206)
+    let add_dmg = entity_mgr.sum_attr_bonus(caster_uid, 205);
+    let drop_dmg = entity_mgr.sum_attr_bonus(target_uid, 206)
         + static_ex_attr_drop_dmg(fight, target_uid);
     let add_dmg = add_dmg + static_ex_attr_add_dmg(fight, caster_uid);
     let dmg_mult = (1000 + add_dmg - drop_dmg).max(0) as f32 / 1000.0;

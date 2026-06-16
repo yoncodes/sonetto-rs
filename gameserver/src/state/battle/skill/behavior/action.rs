@@ -23,11 +23,6 @@ use rand::rngs::StdRng;
 use sonettobuf::ActEffect;
 
 use super::super::executor::SkillExecutor;
-use super::{
-    add_buff, attr_modify, bloodtithe, catapult, damage, direct_skill, disperse, dot_settle,
-    empathy, ex_point, heal, lost_life, magic_circle, misc, nuodika_damage, poison_priority,
-    skill_rate, stats,
-};
 use crate::state::battle::{
     context::behavior_context::BehaviorContext, manager::fight_data_mgr::Managers,
     mechanics::Mechanics, types::behavior::BehaviorType, types::condition::ConditionType,
@@ -39,7 +34,7 @@ use crate::state::battle::{
 /// an accessor explosion. The dispatcher constructs this once per
 /// target inside `dispatch_impl`.
 #[allow(dead_code)]
-pub(super) struct ActionCtx<'a, 'ctx> {
+pub(crate) struct ActionCtx<'a, 'ctx> {
     pub executor: &'a mut SkillExecutor,
     pub rng: &'a mut StdRng,
     pub managers: &'a mut Managers,
@@ -71,23 +66,4 @@ pub(super) trait BehaviorAction {
 /// Order matches the Phase 1+2+3 dispatch sequence so the same
 /// fall-through behavior holds when two clusters could claim
 /// overlapping variants.
-pub(super) const BEHAVIOR_REGISTRY: &[&dyn BehaviorAction] = &[
-    &damage::Damage,
-    &heal::Heal,
-    &empathy::Empathy,
-    &dot_settle::DotSettle,
-    &add_buff::AddBuff,
-    &catapult::Catapult,
-    &poison_priority::PoisonPriority,
-    &disperse::Disperse,
-    &ex_point::ExPoint,
-    &stats::Stats,
-    &lost_life::LostLife,
-    &bloodtithe::BloodPool,
-    &direct_skill::DirectSkill,
-    &magic_circle::MagicCircle,
-    &nuodika_damage::NuoDiKaDamage,
-    &skill_rate::SkillRate,
-    &attr_modify::AttrModify,
-    &misc::Misc,
-];
+pub(super) const BEHAVIOR_REGISTRY: &[&dyn BehaviorAction] = &[];

@@ -16,7 +16,8 @@ use crate::state::battle::{
     fight::defender::Defender,
     fight_step::{ActEffectBuilder, FightStepBuilder},
     manager::{
-        buff_mgr::observe_explicit_buff_uid_for_target, ex_point_mgr::sync_from_fight,
+        buff_mgr::observe_explicit_buff_uid_for_target,
+        entity_mgr::{sync_from_fight, seed_ex_point_required_from_fight},
         round_mgr::seed_entry_max_hp_from_fight,
     },
     skill::SkillExecutor,
@@ -76,11 +77,23 @@ impl WaveMgr {
         self.advance_wave_state(ctx)?;
 
         let fight = ctx.fight.clone();
+        let new_entity_uids: Vec<i64> = fight
+            .defender
+            .as_ref()
+            .into_iter()
+            .flat_map(|d| d.entitys.iter())
+            .filter_map(|e| e.uid)
+            .collect();
+
         let mut steps = vec![
             FightStepBuilder::effect()
                 .with(ActEffectBuilder::new_change_wave(fight.clone()))
                 .build(),
         ];
+
+        for uid in new_entity_uids {
+            let events = ctx.on_enter_fight(uid);
+        }
 
         if let Some(step) = build_active_circle_enemy_buff_step(&fight, ctx, executor) {
             steps.push(step);
@@ -111,7 +124,8 @@ impl WaveMgr {
                 .filter_map(|entity| entity.uid)
                 .collect();
             self.advance_wave_state(ctx)?;
-            sync_from_fight(ctx.fight, &mut ctx.managers.ex_point_mgr);
+            sync_from_fight(ctx.fight, &mut ctx.managers.entity_mgr);
+            seed_ex_point_required_from_fight(ctx.fight, &mut ctx.managers.entity_mgr);
             for uid in old_defender_uids {
                 ctx.managers.buff_mgr.clear(uid);
             }
@@ -144,7 +158,8 @@ impl WaveMgr {
                 .filter_map(|entity| entity.uid)
                 .collect();
             steps.extend(self.advance_wave(ctx, executor)?);
-            sync_from_fight(ctx.fight, &mut ctx.managers.ex_point_mgr);
+            sync_from_fight(ctx.fight, &mut ctx.managers.entity_mgr);
+            seed_ex_point_required_from_fight(ctx.fight, &mut ctx.managers.entity_mgr);
             for uid in old_defender_uids {
                 ctx.managers.buff_mgr.clear(uid);
             }
@@ -197,6 +212,20 @@ impl WaveMgr {
             crate::state::battle::mechanics::phase_change::transform_entity(
                 ctx.fight, uid, new_form,
             )?;
+        }
+
+        let new_entities: Vec<_> = ctx
+            .fight
+            .defender
+            .as_ref()
+            .into_iter()
+            .flat_map(|d| d.entitys.iter())
+            .collect();
+        for entity in new_entities {
+            ctx.managers.passive_mgr.seed_entity(entity);
+            if let Some(uid) = entity.uid {
+                ctx.managers.rule_mgr.seed_entity_uid(uid, ctx.fight);
+            }
         }
 
         Ok(())

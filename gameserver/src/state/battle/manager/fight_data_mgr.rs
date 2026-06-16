@@ -1,22 +1,27 @@
 use super::super::{
-    context::FightContext,
+    context::{FightContext, RoundContext},
+    deck::DeckManager,
     event_queue::{BattleEvent, EventContext, EventQueue, drain_to_fight_steps},
-    fight_step::split_step_by_effect_limit,
     manager::{
         buff_mgr::{BuffMgr, observe_explicit_buff_uid_for_target},
         calculate_mgr::FightCalculateDataMgr,
-        entity_mgr::FightEntityDataMgr,
-        ex_point_mgr::{ExPointMgr, build_ex_point_info, sync_to_fight},
+        cloth_mgr::ClothMgr,
+        entity_mgr::EntityMgr,
+        passive_mgr::PassiveMgr,
+        active_effect_mgr::ActiveEffectMgr,
+        rule_mgr::RuleMgr,
         wave_mgr::WaveMgr,
     },
     mechanics::Mechanics,
-    passives::run_battle_start,
+    round::processor,
+    round_state::set_simulated_round,
+    skill::SkillExecutor,
 };
 use super::round_mgr::seed_entry_max_hp_from_fight;
 
 use anyhow::Result;
 use rand::{SeedableRng, rngs::StdRng};
-use sonettobuf::{BuffInfo, CardInfo, Fight, FightExPointInfo, FightRound, FightStep};
+use sonettobuf::{BeginRoundOper, BuffInfo, CardInfoPush, Fight, FightExPointInfo, FightRound, FightStep};
 
 use crate::state::battle::{
     buff_actions::{blood_pool_ex::seed_blood_pool_ex_tracker, raspberry::BUFF_ACT_ID_RASPBERRY},
@@ -27,44 +32,87 @@ use crate::state::battle::{
 
 #[derive(Debug, Clone, Default)]
 pub struct Managers {
-    pub entity_mgr: FightEntityDataMgr,
+    pub entity_mgr: EntityMgr,
     pub calculate_mgr: FightCalculateDataMgr,
     pub buff_mgr: BuffMgr,
-    pub ex_point_mgr: ExPointMgr,
     pub wave_mgr: WaveMgr,
+    pub deck_mgr: DeckManager,
+    pub cloth_mgr: ClothMgr,
+    pub rule_mgr: RuleMgr,
+    pub passive_mgr: PassiveMgr,
+    pub active_effect_mgr: ActiveEffectMgr,
 }
 
 impl Managers {
     pub fn new(fight: &Fight) -> Self {
+        tracing::info!("FightDataMgr::new battle_id={:?}", fight.battle_id);
         Self {
-            entity_mgr: FightEntityDataMgr::new(fight),
+            entity_mgr: EntityMgr::new(fight),
             calculate_mgr: FightCalculateDataMgr::new(fight),
             buff_mgr: BuffMgr::new(),
-            ex_point_mgr: ExPointMgr::new(),
             wave_mgr: WaveMgr::new(),
+            deck_mgr: DeckManager::default(),
+            cloth_mgr: ClothMgr::default(),
+            rule_mgr: RuleMgr::new(fight),
+            passive_mgr: PassiveMgr::new(fight),
+            active_effect_mgr: ActiveEffectMgr::default(),
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct FightDataMgr {
-    fight: Fight,
+    pub(crate) fight: Fight,
     pub pre_fight: Option<Fight>,
     mechanics: Mechanics,
     pub managers: Managers,
+    pub last_round: Option<FightRound>,
+    pub initial_card_push: Option<CardInfoPush>,
 }
 
 impl FightDataMgr {
-    pub fn new(fight: Fight) -> Self {
+    pub fn new(fight: Fight, max_ap: i32) -> Self {
+        tracing::info!("FightDataMgr::new battle_id={:?}", fight.battle_id);
         seed_entry_max_hp_from_fight(&fight);
         let mechanics = Mechanics::new();
         let pre_fight = Some(fight.clone());
-        Self {
+        let mut fight_mgr = Self {
             managers: Managers::new(&fight),
             pre_fight,
             fight,
             mechanics,
-        }
+            last_round: None,
+            initial_card_push: None,
+        };
+        fight_mgr.managers.entity_mgr.init(&fight_mgr.fight);
+        let card_push = fight_mgr.managers.deck_mgr.init_player(&fight_mgr.fight, max_ap);
+        fight_mgr.managers.deck_mgr.init_enemy(&fight_mgr.fight);
+        fight_mgr.initial_card_push = Some(card_push);
+        fight_mgr
+    }
+
+    pub async fn process_round(
+        &mut self,
+        operations: Vec<BeginRoundOper>,
+        ai_override_steps: Option<Vec<FightStep>>,
+    ) -> Result<FightRound> {
+        let round_index = self.fight.cur_round.unwrap_or(1);
+        set_simulated_round(round_index);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(round_index as u64);
+        let mut skill_executor = SkillExecutor::new();
+        let mut fight_ctx = self.ctx_with_rng(&mut rng);
+        let mut round_ctx = RoundContext::new(&mut fight_ctx, round_index);
+        processor::process_round(
+            &mut rng,
+            &mut round_ctx,
+            &mut skill_executor,
+            operations,
+            ai_override_steps,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     #[inline]
@@ -85,111 +133,31 @@ impl FightDataMgr {
         &mut self.fight
     }
 
+    pub fn execute_cloth_skill(&mut self, skill_id: i32, rng: &mut StdRng) -> anyhow::Result<sonettobuf::FightRound> {
+        let steps = self.managers.cloth_mgr.execute_skill(skill_id, &mut self.fight, &mut self.managers.deck_mgr, rng)?;
+        let mut round = self.last_round.clone().unwrap_or_default();
+        round.fight_step = steps;
+        round.power = self.fight.attacker.as_ref().and_then(|a| a.power);
+        round.team_a_cards1 = self.managers.deck_mgr.player_hand.clone();
+        Ok(round)
+    }
+
     pub fn ctx(&mut self) -> FightContext<'_> {
         FightContext::new(&mut self.fight, &mut self.managers, &mut self.mechanics)
     }
 
-    pub fn ctx_with_rng<'a>(&'a mut self, rng: &mut StdRng) -> FightContext<'a> {
-        self.ctx().with_rng(rng)
+    pub fn check_battle_result(&self) -> i32 {
+        let enemies_alive = self.fight.defender.as_ref()
+            .map(|d| d.entitys.iter().any(|e| e.current_hp.unwrap_or(0) > 0))
+            .unwrap_or(false);
+        let heroes_alive = self.fight.attacker.as_ref()
+            .map(|a| a.entitys.iter().any(|e| e.current_hp.unwrap_or(0) > 0))
+            .unwrap_or(false);
+        if !heroes_alive { 0 } else if !enemies_alive { 1 } else { 1 }
     }
 
-    pub fn build_initial_round(
-        &mut self,
-        battle_id: i32,
-        player_deck: Vec<CardInfo>,
-        ai_deck: Vec<CardInfo>,
-    ) -> Result<FightRound> {
-        // init ex_point_mgr from fight state
-        self.managers.ex_point_mgr.init(&self.fight);
-
-        let mut steps: Vec<FightStep> = Vec::new();
-        let passive_steps = {
-            let seed = self.fight.cur_round.unwrap_or(0) as u64;
-            let mut rng = StdRng::seed_from_u64(seed);
-            let mut ctx = self.ctx_with_rng(&mut rng);
-            run_battle_start(&mut ctx, battle_id)
-        };
-        steps.extend(passive_steps);
-        steps = steps
-            .into_iter()
-            .flat_map(split_step_by_effect_limit)
-            .collect();
-
-        for (uid, hp) in &self.managers.ex_point_mgr.current_hp {
-            tracing::warn!("post-passive hp: uid={} hp={}", uid, hp);
-        }
-
-        sync_to_fight(&mut self.fight, &self.managers.ex_point_mgr);
-
-        // sync HP into pre_fight so fight.entity.current_hp matches ex_point_info.current_hp
-        // other fields (ex_point, moxie) stay at original values for client initialization
-        if let Some(pre) = self.pre_fight.as_mut() {
-            for side in [pre.attacker.as_mut(), pre.defender.as_mut()]
-                .into_iter()
-                .flatten()
-            {
-                for e in side.entitys.iter_mut().chain(side.sub_entitys.iter_mut()) {
-                    if let Some(uid) = e.uid {
-                        e.current_hp = Some(self.managers.ex_point_mgr.get_hp(uid));
-                    }
-                }
-            }
-        }
-
-        self.managers.entity_mgr.rebuild_cache(&self.fight);
-        self.managers.calculate_mgr.update_cache(&self.fight);
-
-        let act_point = self
-            .fight
-            .attacker
-            .as_ref()
-            .map_or(3, |a| a.entitys.len() as i32);
-
-        // build ex_point_info before moving fields
-        for e in self.fight.attacker.iter().flat_map(|t| t.entitys.iter()) {
-            let uid = e.uid.unwrap_or(0);
-            tracing::warn!(
-                "pre-build uid={} mgr_hp={}",
-                uid,
-                self.managers.ex_point_mgr.get_hp(uid)
-            );
-        }
-
-        let ex_point_info = build_ex_point_info(&self.fight, &self.managers.ex_point_mgr);
-
-        let hero_sp_attributes = self
-            .managers
-            .calculate_mgr
-            .build_hero_sp_attributes(&self.fight);
-
-        let skill_infos = self
-            .fight
-            .attacker
-            .as_ref()
-            .map(|a| a.skill_infos.clone())
-            .unwrap_or_default();
-
-        let team_a_cards1 = player_deck;
-
-        Ok(FightRound {
-            fight_step: steps,
-            act_point: Some(act_point),
-            is_finish: Some(false),
-            move_num: Some(0),
-            ex_point_info,
-            ai_use_cards: ai_deck,
-            power: Some(20),
-            skill_infos,
-            before_cards1: vec![],
-            team_a_cards1,
-            before_cards2: vec![],
-            team_a_cards2: vec![],
-            next_round_begin_step: vec![],
-            use_card_list: vec![],
-            cur_round: Some(1),
-            hero_sp_attributes,
-            last_change_hero_uid: Some(0),
-        })
+    pub fn ctx_with_rng<'a>(&'a mut self, rng: &mut StdRng) -> FightContext<'a> {
+        self.ctx().with_rng(rng)
     }
 
     #[allow(dead_code)]
@@ -198,7 +166,7 @@ impl FightDataMgr {
         initial_round: &FightRound,
         ex_point_info: &[FightExPointInfo],
     ) -> Result<()> {
-        self.managers.ex_point_mgr.init(&self.fight);
+        self.managers.entity_mgr.init(&self.fight);
         self.mechanics.init(&self.fight);
 
         for step in &initial_round.fight_step {
@@ -209,7 +177,7 @@ impl FightDataMgr {
                     &mut self.fight,
                     &mut self.mechanics.bloodtithe,
                     &mut self.managers.buff_mgr,
-                    &mut self.managers.ex_point_mgr,
+                    &mut self.managers.entity_mgr,
                 )
                 .map_err(anyhow::Error::msg)?;
         }
@@ -232,11 +200,11 @@ impl FightDataMgr {
 
                     let ex_point = info.ex_point.unwrap_or(0);
                     entity.ex_point = Some(ex_point);
-                    self.managers.ex_point_mgr.set_ex_point(uid, ex_point);
+                    self.managers.entity_mgr.set_ex_point(uid, ex_point);
 
                     if let Some(current_hp) = info.current_hp {
                         entity.current_hp = Some(current_hp);
-                        self.managers.ex_point_mgr.set_hp(uid, current_hp);
+                        self.managers.entity_mgr.set_hp(uid, current_hp);
                     }
                 }
             }
@@ -283,11 +251,11 @@ impl FightDataMgr {
                         });
                         let mut local_fight = Fight::default();
                         let mut local_buff_mgr = BuffMgr::new();
-                        let mut local_ex_point_mgr = ExPointMgr::new();
+                        let mut local_entity_mgr = EntityMgr::default();
                         let mut event_ctx = EventContext {
                             fight: &mut local_fight,
                             buff_mgr: &mut local_buff_mgr,
-                            ex_point_mgr: &mut local_ex_point_mgr,
+                            entity_mgr: &mut local_entity_mgr,
                             bloodtithe: &mut rebuilt,
                         };
                         let _ = drain_to_fight_steps(queue.drain(), &mut event_ctx);
@@ -426,11 +394,11 @@ impl FightDataMgr {
                         });
                         let mut local_fight = Fight::default();
                         let mut local_buff_mgr = BuffMgr::new();
-                        let mut local_ex_point_mgr = ExPointMgr::new();
+                        let mut local_entity_mgr = EntityMgr::default();
                         let mut event_ctx = EventContext {
                             fight: &mut local_fight,
                             buff_mgr: &mut local_buff_mgr,
-                            ex_point_mgr: &mut local_ex_point_mgr,
+                            entity_mgr: &mut local_entity_mgr,
                             bloodtithe: &mut rebuilt,
                         };
                         let _ = drain_to_fight_steps(queue.drain(), &mut event_ctx);

@@ -372,3 +372,29 @@ pub fn resolve_behavior_targets(
         .logic(logic_target)
         .resolve()
 }
+
+pub fn is_alive(fight: &Fight, uid: i64) -> bool {
+    get_entity(fight, uid)
+        .map(|e| e.current_hp.unwrap_or(0) > 0)
+        .unwrap_or(false)
+}
+
+pub fn first_alive_on_side(fight: &Fight, attacker_side: bool) -> Option<i64> {
+    let team = if attacker_side {
+        fight.attacker.as_ref()
+    } else {
+        fight.defender.as_ref()
+    }?;
+    team.entitys
+        .iter()
+        .chain(team.sub_entitys.iter())
+        .find(|e| e.position.unwrap_or(-1) > 0 && e.current_hp.unwrap_or(0) > 0)
+        .and_then(|e| e.uid)
+}
+
+pub fn resolve_target_fallback(fight: &Fight, requested_uid: i64) -> i64 {
+    if requested_uid == 0 || is_alive(fight, requested_uid) {
+        return requested_uid;
+    }
+    first_alive_on_side(fight, requested_uid > 0).unwrap_or(requested_uid)
+}

@@ -1,5 +1,6 @@
 use crate::error::{AppError, CmdError};
 use crate::handlers::*;
+use crate::network::default_handlers;
 use crate::network::packet::ClientPacket;
 use crate::state::ConnectionContext;
 use sonettobuf::CmdId;
@@ -14,7 +15,10 @@ macro_rules! dispatch {
             $(
                 $variant => $handler($ctx, $packet).await?,
             )*
-            v => return Err(AppError::Cmd(CmdError::UnhandledCmd(v))),
+            v => {
+                tracing::warn!("Unhandled command: {:?}, sending default reply", v);
+                default_handlers::send_default_reply($ctx, $packet, v).await?;
+            }
         }
     };
 }
@@ -102,6 +106,7 @@ pub async fn dispatch_command(
         CmdId::DungeonInstructionDungeonInfoCmd => dungeon::on_instruction_dungeon_info,
         CmdId::StartDungeonCmd => dungeon::on_start_dungeon,
         CmdId::BeginRoundCmd => dungeon::on_begin_round,
+        CmdId::UseClothSkillCmd => dungeon::on_use_cloth_skill,
         CmdId::AutoRoundCmd => dungeon::on_auto_round,
         CmdId::FightEndFightCmd => dungeon::on_fight_end_fight,
         CmdId::GetFightRecordGroupCmd => dungeon::on_get_fight_record_group,
@@ -109,6 +114,8 @@ pub async fn dispatch_command(
         CmdId::ChangeHeroGroupSelectCmd => dungeon::on_change_hero_group_select,
         CmdId::DungeonEndDungeonCmd => dungeon::on_dungeon_end_dungeon,
         CmdId::ReconnectFightCmd => fight::on_reconnect_fight,
+        CmdId::EntityInfoCmd => fight::on_entity_info,
+        CmdId::GetFightCardDeckInfoCmd => fight::on_get_fight_card_deck_info,
 
         // === Tower ===
         CmdId::GetTowerInfoCmd => tower::on_get_tower_info,
@@ -219,6 +226,7 @@ pub async fn dispatch_command(
 
         // === Activities ===
         CmdId::GetActivityInfosCmd => events::on_get_activity_infos,
+        CmdId::GetActivityInfosWithParamCmd => events::on_get_activity_infos_with_param,
         // Controls the ui for the latest euphoria not implemented yet tho
         CmdId::GetAct125InfosCmd => events::on_get_act125_infos,
         // controls ui for bonus currency at the start usually for 7 days

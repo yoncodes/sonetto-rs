@@ -1,5 +1,6 @@
 mod action;
 mod bloodtithe;
+pub mod eval;
 pub mod buff;
 mod career;
 mod combat;
@@ -14,7 +15,7 @@ pub mod scope;
 use self::action::CONDITION_REGISTRY;
 
 use crate::state::battle::{
-    manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr},
+    manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
     mechanics::bloodtithe::BloodtitheState,
     skill::{
         cache::{SKILL_CACHE, resolve_skill_effect_id},
@@ -31,7 +32,7 @@ pub use crate::state::battle::types::condition::ConditionType;
 pub struct ConditionEval<'a> {
     pub(super) fight: &'a Fight,
     pub(super) buff_mgr: &'a BuffMgr,
-    pub(super) ex_point_mgr: &'a ExPointMgr,
+    pub(super) entity_mgr: &'a EntityMgr,
     pub(super) bloodtithe: &'a BloodtitheState,
     pub(super) caster_uid: i64,
     pub(super) target_uid: i64,
@@ -44,14 +45,14 @@ impl<'a> ConditionEval<'a> {
     pub fn new(
         fight: &'a Fight,
         buff_mgr: &'a BuffMgr,
-        ex_point_mgr: &'a ExPointMgr,
+        entity_mgr: &'a EntityMgr,
         bloodtithe: &'a BloodtitheState,
         caster_uid: i64,
     ) -> Self {
         Self {
             fight,
             buff_mgr,
-            ex_point_mgr,
+            entity_mgr,
             bloodtithe,
             caster_uid,
             target_uid: caster_uid,
@@ -429,14 +430,14 @@ fn skill_is_hurt(skill_id: i32) -> bool {
 pub fn check_condition(
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    ex_point_mgr: &ExPointMgr,
+    entity_mgr: &EntityMgr,
     bloodtithe: &BloodtitheState,
     caster_uid: i64,
     target_uid: i64,
     has_trigger_state: bool,
     condition: &ConditionType,
 ) -> bool {
-    ConditionEval::new(fight, buff_mgr, ex_point_mgr, bloodtithe, caster_uid)
+    ConditionEval::new(fight, buff_mgr, entity_mgr, bloodtithe, caster_uid)
         .for_target(target_uid)
         .with_trigger_state(has_trigger_state)
         .check(condition)
@@ -481,8 +482,8 @@ mod tests {
     }
 
     fn assert_false_without_trigger_state(condition: ConditionType) {
-        let mut ex_point_mgr = ExPointMgr::new();
-        ex_point_mgr.set_recent_decr_ex_point(1, 3);
+        let mut entity_mgr = EntityMgr::default();
+        entity_mgr.set_recent_decr_ex_point(1, 3);
         let fight = build_fight();
         let buff_mgr = BuffMgr::new();
         let bloodtithe = BloodtitheState::new();
@@ -490,7 +491,7 @@ mod tests {
         assert!(!check_condition(
             &fight,
             &buff_mgr,
-            &ex_point_mgr,
+            &entity_mgr,
             &bloodtithe,
             1,
             -1,
@@ -555,7 +556,7 @@ mod tests {
 
     #[test]
     fn trigger_bullet_is_true_with_trigger_state() {
-        let ex_point_mgr = ExPointMgr::new();
+        let entity_mgr = EntityMgr::default();
         let fight = build_fight();
         let buff_mgr = BuffMgr::new();
         let bloodtithe = BloodtitheState::new();
@@ -563,7 +564,7 @@ mod tests {
         assert!(check_condition(
             &fight,
             &buff_mgr,
-            &ex_point_mgr,
+            &entity_mgr,
             &bloodtithe,
             1,
             -1,

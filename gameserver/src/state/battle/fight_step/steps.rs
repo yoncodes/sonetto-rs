@@ -15,7 +15,7 @@ pub fn make_skill_step(
         to_id: Some(target_uid),
         act_id: Some(skill_id),
         act_effect: effects,
-        card_index: Some(card_index),
+        card_index: Some(card_index + 1),
         support_hero_id: Some(0),
         fake_timeline: Some(false),
         real_skill_type: Some(0),

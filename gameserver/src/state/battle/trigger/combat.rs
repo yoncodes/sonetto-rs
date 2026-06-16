@@ -6,11 +6,12 @@ use crate::state::battle::{
     buff_actions::blood_pool_ex::build_blood_pool_gain_ex_point_step,
     context::FightContext,
     event_queue::{EventContext, EventQueue, drain_to_fight_steps, fight_step_to_event},
-    manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr},
+    manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
     mechanics::bloodtithe::BloodtitheState,
     passives::collector::CollectedPassives,
     passives::steps::skill::execute_skill,
     round::step_shape::build_effect_step,
+    rule::collect::collect_battle_rule_skills,
     skill::cache::resolve_skill_effect_id,
     skill::classification::{
         CombatPassiveScanMode, has_combat_reactive_condition, has_injury_reactive_condition,
@@ -635,7 +636,7 @@ pub(crate) fn expand_trigger_chain_from_root_step(
                 ctx.fight,
                 &mut ctx.mechanics.bloodtithe,
                 &mut ctx.managers.buff_mgr,
-                &mut ctx.managers.ex_point_mgr,
+                &mut ctx.managers.entity_mgr,
             )
             .map_err(anyhow::Error::msg)
             .ok();
@@ -657,7 +658,7 @@ pub(crate) fn expand_trigger_chain_from_root_step(
                             ctx.fight,
                             &mut ctx.mechanics.bloodtithe,
                             &mut ctx.managers.buff_mgr,
-                            &mut ctx.managers.ex_point_mgr,
+                            &mut ctx.managers.entity_mgr,
                         )
                         .map_err(anyhow::Error::msg)
                         .ok();
@@ -673,7 +674,7 @@ pub(crate) fn expand_trigger_chain_from_root_step(
             &ctx.mechanics.bloodtithe,
             ctx.fight,
             &ctx.managers.buff_mgr,
-            &mut ctx.managers.ex_point_mgr,
+            &mut ctx.managers.entity_mgr,
             &gains,
             &ts_event.bloodpool_gain_by_skill_team,
         ) {
@@ -684,7 +685,7 @@ pub(crate) fn expand_trigger_chain_from_root_step(
                     ctx.fight,
                     &mut ctx.mechanics.bloodtithe,
                     &mut ctx.managers.buff_mgr,
-                    &mut ctx.managers.ex_point_mgr,
+                    &mut ctx.managers.entity_mgr,
                 )
                 .map_err(anyhow::Error::msg)
                 .ok();
@@ -702,12 +703,12 @@ pub(crate) fn expand_trigger_chain_from_root_step(
     }
 
     let mut buff_mgr = BuffMgr::new();
-    let mut ex_point_mgr = ExPointMgr::new();
+    let mut entity_mgr = EntityMgr::default();
     let mut bloodtithe = BloodtitheState::new();
     let mut event_ctx = EventContext {
         fight: ctx.fight,
         buff_mgr: &mut buff_mgr,
-        ex_point_mgr: &mut ex_point_mgr,
+        entity_mgr: &mut entity_mgr,
         bloodtithe: &mut bloodtithe,
     };
     let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx);
@@ -936,47 +937,6 @@ pub(crate) fn run_combat_passives_pass(
     }
 
     steps
-}
-
-fn collect_battle_rule_skills(fight: &Fight) -> Vec<i32> {
-    let cfg = config::configs::get();
-    let episode_id = fight.episode_id.unwrap_or(0);
-    let Some(battle_id) = cfg
-        .episode
-        .iter()
-        .find(|e| e.id == episode_id)
-        .map(|e| e.battle_id)
-    else {
-        return vec![];
-    };
-    let Some(battle) = cfg.battle.iter().find(|b| b.id == battle_id) else {
-        return vec![];
-    };
-    if battle.addition_rule.is_empty() {
-        return vec![];
-    }
-
-    let mut out = Vec::new();
-    for entry in battle.addition_rule.split('|') {
-        let mut parts = entry.split('#');
-        let Some(prefix) = parts.next().and_then(|v| v.parse::<i32>().ok()) else {
-            continue;
-        };
-        if !(1..=3).contains(&prefix) {
-            continue;
-        }
-        let Some(rule_id) = parts.next().and_then(|v| v.parse::<i32>().ok()) else {
-            continue;
-        };
-        let Some(rule) = cfg.rule.iter().find(|r| r.id == rule_id) else {
-            continue;
-        };
-        let sid = rule.effect.parse::<i32>().ok().unwrap_or(0);
-        if sid > 0 && !out.contains(&sid) {
-            out.push(sid);
-        }
-    }
-    out
 }
 
 fn skill_has_has_buff_id_condition(skill_id: i32) -> bool {

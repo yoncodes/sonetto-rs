@@ -8,7 +8,7 @@ use crate::state::battle::{
     event_queue::{BattleEvent, EventContext, EventQueue, drain_to_fight_steps},
     fight_step::ActEffectBuilder,
     heroes::rubuska,
-    manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr},
+    manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
     mechanics::bloodtithe::BloodtitheState,
     utils::find_entity,
 };
@@ -43,7 +43,7 @@ pub fn build_blood_pool_ex_point_step(
     bloodtithe: &mut BloodtitheState,
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    ex_point_mgr: &mut ExPointMgr,
+    entity_mgr: &mut EntityMgr,
 ) -> Option<FightStep> {
     if !bloodtithe.initialized {
         return None;
@@ -108,7 +108,7 @@ pub fn build_blood_pool_ex_point_step(
                 let mut event_ctx = EventContext {
                     fight: &mut synthetic_fight,
                     buff_mgr: &mut synthetic_buff_mgr,
-                    ex_point_mgr,
+                    entity_mgr,
                     bloodtithe,
                 };
                 act_effect.extend(drain_to_fight_steps(queue.drain(), &mut event_ctx));
@@ -144,7 +144,7 @@ pub fn build_blood_pool_gain_ex_point_step(
     bloodtithe: &BloodtitheState,
     fight: &Fight,
     buff_mgr: &BuffMgr,
-    ex_point_mgr: &mut ExPointMgr,
+    entity_mgr: &mut EntityMgr,
     gains_by_team: &[(i32, i32)],
     _gains_by_skill_team: &[(i32, i32, i32)],
 ) -> Option<FightStep> {
@@ -215,7 +215,7 @@ pub fn build_blood_pool_gain_ex_point_step(
                 let mut event_ctx = EventContext {
                     fight: &mut synthetic_fight,
                     buff_mgr: &mut synthetic_buff_mgr,
-                    ex_point_mgr,
+                    entity_mgr,
                     bloodtithe: &mut synthetic_bloodtithe,
                 };
                 act_effect.extend(drain_to_fight_steps(queue.drain(), &mut event_ctx));

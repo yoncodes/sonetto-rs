@@ -4,7 +4,7 @@ use crate::util::push::{send_dungeon_update_push, send_end_dungeon_push, send_re
 
 use crate::send_push;
 use crate::state::{
-    BattleSimulator, ConnectionContext, generate_auto_opers, generate_dungeon_rewards,
+    ConnectionContext, generate_auto_opers, generate_dungeon_rewards,
     send_end_fight_push,
 };
 use database::db::game::dungeons::{
@@ -32,7 +32,6 @@ pub async fn on_auto_round(
     );
 
     let (
-        current_deck,
         fight_group,
         chapter_id,
         episode_id,
@@ -40,7 +39,6 @@ pub async fn on_auto_round(
         battle_id,
         round_num,
         multiplication,
-        ai_deck,
         fight_data_mgr,
     ) = {
         let mut conn = ctx.lock().await;
@@ -55,47 +53,34 @@ pub async fn on_auto_round(
             .ok_or(AppError::InvalidRequest)?;
 
         (
-            battle.current_deck.clone(),
             battle.fight_group.clone(),
             battle.chapter_id,
             battle.episode_id,
             battle.is_replay.unwrap_or(false),
             battle.fight_id.unwrap_or_default(),
-            battle.current_round,
+            mgr.fight().cur_round.unwrap_or(1),
             battle.multiplication.unwrap_or(1),
-            battle.ai_deck.clone(),
             mgr,
         )
     };
 
     let (player_id, pool) = {
         let conn = ctx.lock().await;
-        (
-            conn.player_id.ok_or(AppError::NotLoggedIn)?,
-            conn.state.db.clone(),
-        )
+        (conn.player_id.ok_or(AppError::NotLoggedIn)?, conn.state.db.clone())
     };
 
-    let auto_opers = generate_auto_opers(&current_deck);
-    tracing::info!("AutoRound server selected {} ops", auto_opers.len());
+    let auto_opers = {
+        let hand = fight_data_mgr.managers.deck_mgr.player_hand.clone();
+        generate_auto_opers(&hand)
+    };
 
-    let mut simulator = BattleSimulator::new(fight_data_mgr);
-
-    let mut round = simulator
-        .process_round(auto_opers.clone(), current_deck, ai_deck, None)
-        .await?;
-
+    let mut fight_data_mgr = fight_data_mgr;
+    let mut round = fight_data_mgr.process_round(auto_opers.clone(), None).await?;
     round.is_finish = Some(true);
-
-    let fight_data_mgr = simulator.into_data();
 
     {
         let mut conn = ctx.lock().await;
-        let battle = conn
-            .active_battle
-            .as_mut()
-            .ok_or(AppError::InvalidRequest)?;
-
+        let battle = conn.active_battle.as_mut().ok_or(AppError::InvalidRequest)?;
         battle.fight_data_mgr = Some(fight_data_mgr);
     }
 

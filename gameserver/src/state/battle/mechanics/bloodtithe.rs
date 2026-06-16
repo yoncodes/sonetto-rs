@@ -17,7 +17,7 @@ use crate::state::battle::{
     buff_actions::{nuodika, round_end},
     event_queue::{BattleEvent, serialize_leaf_event},
     fight_step::{ActEffectBuilder, FightStepBuilder, effect_container_step, wrap_step},
-    manager::{buff_mgr::BuffMgr, ex_point_mgr::ExPointMgr, round_mgr::FightRoundMgr},
+    manager::{buff_mgr::BuffMgr, entity_mgr::EntityMgr},
     passives::{collector::CollectedPassives, steps::build_passive_step},
     trigger::{combat::event_from_step, passes::build_belief_gain_step},
     utils::{buff_has_bloodpool, find_entity},
@@ -242,7 +242,6 @@ impl BloodtitheState {
 }
 
 pub(crate) fn build_round_transition_bloodtithe_steps(
-    mgr: &FightRoundMgr,
     ctx: &mut FightContext<'_>,
     collected: &CollectedPassives,
 ) -> Vec<FightStep> {
@@ -251,7 +250,7 @@ pub(crate) fn build_round_transition_bloodtithe_steps(
     let raspberry_step = ctx.mechanics.on_raspberry(
         ctx.fight,
         &ctx.managers.buff_mgr,
-        &mut ctx.managers.ex_point_mgr,
+        &mut ctx.managers.entity_mgr,
     );
     if let Some(step) = ctx.mechanics.on_pre_raspberry() {
         out.push(step);
@@ -278,7 +277,7 @@ pub(crate) fn build_round_transition_bloodtithe_steps(
     if let Some(step) = ctx.mechanics.on_post_raspberry(
         ctx.fight,
         &ctx.managers.buff_mgr,
-        &ctx.managers.ex_point_mgr,
+        &ctx.managers.entity_mgr,
     ) {
         out.push(step);
     }
@@ -312,14 +311,14 @@ pub(crate) fn build_round_transition_bloodtithe_steps(
         ctx, collected,
     ));
 
-    let nuodika_steps = nuodika::build_nuodika_channel_steps(mgr, ctx, &out, collected);
+    let nuodika_steps = nuodika::build_nuodika_channel_steps(ctx, &out, collected);
     out.extend(nuodika_steps);
 
     if let Some(step) = build_blood_pool_ex_point_step(
         &mut ctx.mechanics.bloodtithe,
         ctx.fight,
         &ctx.managers.buff_mgr,
-        &mut ctx.managers.ex_point_mgr,
+        &mut ctx.managers.entity_mgr,
     ) && !step.act_effect.is_empty()
     {
         out.push(step);
@@ -395,7 +394,7 @@ impl BloodtitheState {
         &mut self,
         fight: &Fight,
         buff_mgr: &BuffMgr,
-        ex_point_mgr: &mut ExPointMgr,
+        entity_mgr: &mut EntityMgr,
         shadow_cloak: &mut super::shadowcloak::ShadowCloakState,
     ) -> Option<FightStep> {
         if !self.initialized {
@@ -423,7 +422,7 @@ impl BloodtitheState {
                 else {
                     continue;
                 };
-                let current_hp = ex_point_mgr.get_hp(uid);
+                let current_hp = entity_mgr.get_hp(uid);
                 let caster_uid = instance.from_uid;
                 let damage = current_hp * rate_permille / 1000;
                 if damage == 0 {
@@ -449,7 +448,7 @@ impl BloodtitheState {
                     && let Some(gained) = self.on_hp_lost(uid, team_type, damage)
                 {
                     if let Some(nautika_uid) = nautika::find_uid(fight, team_type) {
-                        ex_point_mgr.add_ex_point(nautika_uid, gained);
+                        entity_mgr.add_ex_point(nautika_uid, gained);
                         effects.push(nautika::faith_gain_amount(nautika_uid, gained));
                     }
                     effects.push(bloodtithe_add_to_pool(uid, gained));

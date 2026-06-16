@@ -4,4 +4,4 @@ pub mod executor;
 pub mod inject;
 pub mod steps;
 
-pub use executor::run_battle_start;
+pub use executor::execute_battle_start_passives;

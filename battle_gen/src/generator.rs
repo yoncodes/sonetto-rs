@@ -13,7 +13,7 @@ pub fn generate_begin_round_reply(
     ai_deck: Vec<CardInfo>,
 ) -> Result<StartDungeonReply> {
     let battle_id = fight_input.battle_id.unwrap_or_default();
-    let mut mgr = FightDataMgr::new(fight_input);
+    let mut mgr = FightDataMgr::new(fight_input, 0);
     let round = mgr
         .build_initial_round(battle_id, player_deck, ai_deck)
         .context("failed to build initial round")?;
@@ -41,7 +41,7 @@ pub async fn generate_begin_round_sequence(
         Vec<Fight>,
     )>,
 ) -> Result<Vec<(String, Value)>> {
-    let mut mgr = FightDataMgr::new(fight_input);
+    let mut mgr = FightDataMgr::new(fight_input, 0);
     let attacker_uids: std::collections::HashSet<i64> = mgr
         .fight()
         .attacker
@@ -100,6 +100,7 @@ pub async fn generate_begin_round_sequence(
                 Some(replay_selected_cards),
                 Some(replay_silent_ops),
                 Some(replay_wave_snapshots),
+                vec![],
             )
             .await
             .with_context(|| format!("failed simulating {}", name))?;

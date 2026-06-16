@@ -1,4 +1,4 @@
-use sonettobuf::{ActEffect, FightStep, fight_step};
+use sonettobuf::{ActEffect, CardInfo, FightStep, fight_step};
 
 use crate::state::battle::{context::FightContext, fight_step::ActEffectBuilder};
 
@@ -32,7 +32,7 @@ pub fn build_temp_card_step(ctx: &mut FightContext<'_>, uids: &[i64]) -> Option<
                     .and_then(|a| a.entitys.iter().find(|e| e.uid == Some(uid)))
                     .and_then(|e| e.model_id)
                     .unwrap_or(0);
-                let ex_max = ctx.managers.ex_point_mgr.get_ex_max(uid);
+                let ex_max = ctx.managers.entity_mgr.get_ex_max(uid);
 
                 let inner = FightStep {
                     act_type: Some(fight_step::ActType::Effect.into()),
@@ -45,6 +45,26 @@ pub fn build_temp_card_step(ctx: &mut FightContext<'_>, uids: &[i64]) -> Option<
                     ],
                     ..Default::default()
                 };
+                if ex_skill_id == 0 {
+                    continue;
+                }
+                ctx.managers.deck_mgr.player_hand.push(CardInfo {
+                    uid: Some(0),
+                    skill_id: Some(ex_skill_id),
+                    card_effect: Some(0),
+                    temp_card: Some(true),
+                    enchants: vec![],
+                    card_type: Some(0),
+                    hero_id: Some(0),
+                    status: Some(0),
+                    target_uid: Some(0),
+                    extra_info: None,
+                    energy: Some(0),
+                    extra_infos: vec![],
+                    area_red_or_blue: Some(0),
+                    heat_id: Some(0),
+                    music_note: None,
+                });
                 effects
                     .push(crate::state::battle::fight_step::ActEffectBuilder::skill_wrapper(inner));
             }

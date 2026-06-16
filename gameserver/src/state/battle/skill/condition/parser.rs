@@ -55,7 +55,7 @@ pub fn parse_single(raw: &str) -> ConditionType {
         .find_map(|cluster| cluster.parse(&parts, cond_type))
         .unwrap_or_else(|| {
             if !cond_type.is_empty() {
-                tracing::warn!("Unknown condition type: {} (id={})", cond_type, id);
+                //tracing::warn!("Unknown condition type: {} (id={})", cond_type, id);
             }
             ConditionType::Unknown {
                 raw: raw.to_string(),

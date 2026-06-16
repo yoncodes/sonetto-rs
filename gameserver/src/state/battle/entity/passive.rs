@@ -27,7 +27,7 @@ impl Passive {
             for d in base_ids {
                 let ex_resolved = *ex_map.get(&d).unwrap_or(&d);
                 let final_id = destiny
-                    .and_then(|m| m.get(&d))
+                    .and_then(|m| m.get(&ex_resolved))
                     .copied()
                     .unwrap_or(ex_resolved);
                 passives.push(final_id);
@@ -46,7 +46,7 @@ impl Passive {
                 // apply ex_level upgrades — replaces base passive with upgraded variant
                 let upgraded = *ex_map.get(&id).unwrap_or(&id);
                 let final_id = destiny
-                    .and_then(|m| m.get(&id))
+                    .and_then(|m| m.get(&upgraded))
                     .copied()
                     .unwrap_or(upgraded);
                 passives.push(final_id);

@@ -66,12 +66,12 @@ impl EffectContext<'_> {
 
     #[inline]
     pub fn get_hp(&self, uid: i64) -> i32 {
-        self.managers.ex_point_mgr.get_hp(uid)
+        self.managers.entity_mgr.get_hp(uid)
     }
 
     #[inline]
     pub fn get_max_hp(&self, uid: i64) -> i32 {
-        let tracked = self.managers.ex_point_mgr.get_max_hp(uid);
+        let tracked = self.managers.entity_mgr.get_max_hp(uid);
         if tracked > 0 {
             return tracked;
         }
@@ -98,5 +98,10 @@ impl EffectContext<'_> {
     #[inline]
     pub fn buff_mgr_mut(&mut self) -> &mut BuffMgr {
         &mut self.managers.buff_mgr
+    }
+
+    #[inline]
+    pub fn entity_mgr(&self) -> &crate::state::battle::manager::entity_mgr::EntityMgr {
+        &self.managers.entity_mgr
     }
 }

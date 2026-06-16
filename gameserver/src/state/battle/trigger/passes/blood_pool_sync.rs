@@ -28,7 +28,7 @@ impl TriggerPass for BloodPoolSyncPass {
             &ctx.mechanics.bloodtithe,
             ctx.fight,
             &ctx.managers.buff_mgr,
-            &mut ctx.managers.ex_point_mgr,
+            &mut ctx.managers.entity_mgr,
             &gains,
             &event.bloodpool_gain_by_skill_team,
         ) {
@@ -39,7 +39,7 @@ impl TriggerPass for BloodPoolSyncPass {
             &mut ctx.mechanics.bloodtithe,
             ctx.fight,
             &ctx.managers.buff_mgr,
-            &mut ctx.managers.ex_point_mgr,
+            &mut ctx.managers.entity_mgr,
         ) {
             out.push(step);
         }

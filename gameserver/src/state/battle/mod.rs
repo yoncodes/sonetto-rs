@@ -1,13 +1,20 @@
 mod auto;
+pub(crate) mod ai;
 mod card;
+pub mod cloth;
+pub mod deck;
+pub(crate) mod operation;
 mod passives;
 
 pub mod context;
 pub mod destiny;
+pub mod effect;
+pub mod dungeon_end_logic;
 pub mod emission_timeline;
 pub mod end_fight;
 pub mod equipment;
 pub mod event_queue;
+pub mod event;
 pub mod types;
 
 pub mod manager;
@@ -17,7 +24,7 @@ pub mod rewards;
 pub mod round;
 pub mod round_end_emission;
 pub mod round_state;
-pub mod simulator;
+pub mod rule;
 pub mod step_walker;
 pub mod steps;
 
@@ -34,13 +41,11 @@ pub mod skill;
 pub mod trigger;
 
 use anyhow::Result;
-use sonettobuf::CardInfo;
 use sonettobuf::FightRound;
 use sqlx::SqlitePool;
 
 pub use auto::generate_auto_opers;
-pub use card::apply_opening_deck;
-pub use card::{default_max_ap, generate_ai_deck, generate_initial_deck};
+pub use deck::default_max_ap;
 pub use types::{behavior::BehaviorType, condition::ConditionType};
 
 use crate::state::battle::manager::fight_data_mgr::FightDataMgr;
@@ -58,17 +63,10 @@ pub async fn create_battle(
     pool: &SqlitePool,
     ctx: BattleContext,
     fight_group: &sonettobuf::FightGroup,
-    player_deck: Vec<CardInfo>,
-) -> Result<(FightRound, FightDataMgr, Vec<CardInfo>)> {
-    let built = fight::builder::build_fight(pool, &ctx, fight_group).await?;
-
-    let seed = (ctx.player_id as u64) ^ (ctx.episode_id as u64) ^ 0xA11C;
-
-    let ai_deck = generate_ai_deck(&built.fight, seed).await;
-
-    let (initial_round, fight_data_mgr) =
-        round::build_initial_round(built.fight, player_deck, ai_deck.clone(), ctx.battle_id)
-            .await?;
-
-    Ok((initial_round, fight_data_mgr, ai_deck))
+    seed: u64,
+) -> Result<(FightRound, FightDataMgr)> {
+    let built_fight = fight::builder::build_fight(pool, &ctx, fight_group).await?;
+    let mut fight_data_mgr = FightDataMgr::new(built_fight.fight, ctx.max_ap);
+    let initial_round = round::build_initial_round(&mut fight_data_mgr, ctx.battle_id, seed)?;
+    Ok((initial_round, fight_data_mgr))
 }

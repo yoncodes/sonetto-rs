@@ -1,5 +1,6 @@
 mod builder;
 pub mod passive_phase;
+pub mod processor;
 pub mod round_end_bundling;
 mod state;
 pub mod step_shape;

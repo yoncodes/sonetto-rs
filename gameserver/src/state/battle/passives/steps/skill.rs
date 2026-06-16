@@ -54,7 +54,7 @@ pub fn execute_skill(
         let mut event_ctx = EventContext {
             fight: ctx.fight,
             buff_mgr: &mut ctx.managers.buff_mgr,
-            ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+            entity_mgr: &mut ctx.managers.entity_mgr,
             bloodtithe: &mut ctx.mechanics.bloodtithe,
         };
         let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx)
@@ -73,7 +73,7 @@ pub fn execute_skill(
     // replay these steps via calculate_mgr::play_step_data, which applies
     // ExPointChange effects itself. Battle-start callers
     // (fight_data_mgr::build_initial_round via run_battle_start) do NOT
-    // replay steps — so ex_point_mgr must be mirrored here for non-combat
+    // replay steps — so entity_mgr must be mirrored here for non-combat
     // phases only. Mirroring in combat would double-apply (heroes gained
     // 2x expected moxie on TeammateUseExSkill + AddExPointWithMax).
     let should_mirror_ex = !phase.is_combat();
@@ -111,7 +111,7 @@ pub fn execute_skill(
                 && let Some(target) = effect.target_id
             {
                 ctx.managers
-                    .ex_point_mgr
+                    .entity_mgr
                     .add_ex_point(target, effect.effect_num.unwrap_or(0));
             }
         }
@@ -167,7 +167,7 @@ fn should_inline_use_ex_replace_buff2(
         .unwrap_or(false)
 }
 
-/// Mirror ExPointChange (type 111) effects into ex_point_mgr. Only safe to
+/// Mirror ExPointChange (type 111) effects into entity_mgr. Only safe to
 /// call when the caller does NOT replay the same effects through
 /// calculate_mgr::play_step_data (which itself calls add_ex_point). Used for
 /// battle-start passives, not combat triggers.
@@ -178,7 +178,7 @@ fn sync_ex_point_state(ctx: &mut FightContext<'_>, uid: i64, effects: &[ActEffec
         }
         let target = effect.target_id.unwrap_or(uid);
         let amount = effect.effect_num.unwrap_or(0);
-        ctx.managers.ex_point_mgr.add_ex_point(target, amount);
+        ctx.managers.entity_mgr.add_ex_point(target, amount);
     });
 }
 

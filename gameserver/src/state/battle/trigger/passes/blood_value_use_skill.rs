@@ -167,7 +167,7 @@ impl TriggerPass for BloodValueUseSkillPass {
                             let mut event_ctx = EventContext {
                                 fight: ctx.fight,
                                 buff_mgr: &mut ctx.managers.buff_mgr,
-                                ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+                                entity_mgr: &mut ctx.managers.entity_mgr,
                                 bloodtithe: &mut ctx.mechanics.bloodtithe,
                             };
                             let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx)
@@ -259,7 +259,7 @@ fn maybe_inject_wrapped_bloodpool_gain(
     let mut event_ctx = EventContext {
         fight: &mut local_fight,
         buff_mgr: &mut ctx.managers.buff_mgr,
-        ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+        entity_mgr: &mut ctx.managers.entity_mgr,
         bloodtithe: &mut ctx.mechanics.bloodtithe,
     };
     let mut drained = drain_to_fight_steps(queue.drain(), &mut event_ctx);

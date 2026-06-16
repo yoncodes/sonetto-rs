@@ -7,7 +7,7 @@ use crate::state::battle::{
     context::FightContext,
     event_queue::{BattleEvent, EventContext, EventQueue, drain_to_fight_steps},
     fight_step::{effect_container_step, wrap_step},
-    manager::{buff_mgr::BuffInstance, round_mgr::FightRoundMgr},
+    manager::{buff_mgr::BuffInstance, round_mgr::{apply_step_and_maybe_sync, deleted_buff_ids_from_delta, expand_trigger_chain, first_alive_defender_uid}},
     passives::{
         collector::CollectedPassives, steps::skill::execute_skill as execute_passive_skill,
     },
@@ -525,7 +525,6 @@ pub fn inject_monitor_continue_into_enemy_skill_step<F, G>(
 }
 
 pub(crate) fn inject_channel_followup_buffs_if_missing(
-    mgr: &FightRoundMgr,
     ctx: &mut FightContext<'_>,
     collected: &crate::state::battle::passives::collector::CollectedPassives,
     steps: &mut Vec<FightStep>,
@@ -606,7 +605,7 @@ pub(crate) fn inject_channel_followup_buffs_if_missing(
         return false;
     };
 
-    let selected_target_uid = mgr.first_alive_defender_uid(ctx.fight).unwrap_or(0);
+    let selected_target_uid = first_alive_defender_uid(ctx.fight).unwrap_or(0);
     let target_uid = crate::state::battle::skill::targets::TargetResolver::new(
         ctx.fight,
         caster_uid,
@@ -652,8 +651,7 @@ pub(crate) fn inject_channel_followup_buffs_if_missing(
         }
     }
 
-    if mgr
-        .apply_step_and_maybe_sync(ctx, &channel_step, true)
+    if apply_step_and_maybe_sync(ctx, &channel_step, true)
         .is_err()
     {
         return false;
@@ -661,9 +659,8 @@ pub(crate) fn inject_channel_followup_buffs_if_missing(
 
     let buff_snapshot_after = ctx.managers.buff_mgr.all_instances();
     let runtime_deleted_buff_ids =
-        mgr.deleted_buff_ids_from_delta(&buff_snapshot_before, &buff_snapshot_after);
-    let trigger_steps: Vec<FightStep> = mgr
-        .expand_trigger_chain(ctx, collected, &channel_step, &runtime_deleted_buff_ids)
+        deleted_buff_ids_from_delta(&buff_snapshot_before, &buff_snapshot_after);
+    let trigger_steps: Vec<FightStep> = expand_trigger_chain(ctx, collected, &channel_step, &runtime_deleted_buff_ids)
         .into_iter()
         .skip(1)
         .filter(|step| trigger_embed::trigger_step_origin_uid(step) == Some(caster_uid))
@@ -810,7 +807,7 @@ fn build_display_only_consume_channel_embeds(
         let mut event_ctx = EventContext {
             fight: ctx.fight,
             buff_mgr: &mut ctx.managers.buff_mgr,
-            ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+            entity_mgr: &mut ctx.managers.entity_mgr,
             bloodtithe: &mut ctx.mechanics.bloodtithe,
         };
         let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx)
@@ -851,7 +848,7 @@ fn build_display_only_consume_channel_embeds(
         let mut event_ctx = EventContext {
             fight: ctx.fight,
             buff_mgr: &mut ctx.managers.buff_mgr,
-            ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+            entity_mgr: &mut ctx.managers.entity_mgr,
             bloodtithe: &mut ctx.mechanics.bloodtithe,
         };
         let drained = drain_to_fight_steps(queue.drain(), &mut event_ctx)

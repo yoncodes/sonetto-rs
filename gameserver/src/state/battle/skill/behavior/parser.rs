@@ -33,56 +33,21 @@ pub fn parse_behavior(raw: &str) -> BehaviorType {
             buff_id: p2,
         };
     }
-    // Kakania's EX `Id, Ego and Superego` (skill 30800131,
-    // `behavior1 = 60040#10000#1#0`) is the consume-and-bonus version
-    // of `60038`: same Genesis-bonus formula, but the caster's
-    // stored Empathy is reset to 0 once the bonus has been computed.
-    // Per the in-game ability text: "1-target attack. Deals X% Mental
-    // DMG plus (Current [Empathy] × multiplier%) Genesis DMG to the
-    // target, resets [Empathy] to zero, and then starts recording
-    // the damage the target takes for the round."
     if id == 60040 {
         return BehaviorType::ConsumeInjuryBankAndDamage {
             multiplier_permille: p1,
         };
     }
-    // `Disperse2` (skill_behavior id 30009) is a single-buff drop —
-    // e.g. Sentinel `31260131 slot4 = '30009#31260121'`. The
-    // type-name wildcard below (`starts_with("Disperse")`) catches
-    // it as the argless `Disperse` (drop every buff), discarding
-    // the buff_id. Route this specific id to the existing
-    // `DisperseForce` runtime to preserve the targeted-buff
-    // semantic. Other Disperse-family ids (e.g. 30003 / 30004 /
-    // 30008 / 30016 / 30017 / 90002) keep the legacy mapping until
-    // we have evidence each carries a buff_id arg LIVE-side; the
-    // wildcard route already widens enough to be wrong if their
-    // semantics also differ — addressed one id at a time.
     if id == 30009 && p1 > 0 {
         return BehaviorType::DisperseForce { buff_id: p1 };
     }
-    // `CritRateAlter2` (skill_behavior id 60228) bumps the caster's
-    // Crit Rate (Attr::Cri = 201). LIVE encodes it as `60228#<permille>`
-    // — e.g. Sentinel `31260181 slot2 = '60228#800'` (+80% Cri while
-    // her Hour of Repentance buff 31260151 is up). Route to the
-    // existing `AttrFix` runtime: the Cri attr is one of the
-    // attribute slots `executor.add_attr_bonus` already updates.
-    // Note: id 100023 is also tagged `CritRateAlter2` in the data
-    // bundle but is not in current fixtures — leaving it
-    // unaliased until we see a LIVE use.
     if id == 60228 {
         return BehaviorType::AttrFix {
             attr_id: crate::state::battle::types::attr::AttrId::Cri as i32,
             amount: p1,
         };
     }
-    // `AttrFixByLoseHp` (skill_behavior id 60033) is encoded as
-    // `60033#<step_permille>#<attr_id>#<bonus_per_stack>#<max_stacks>`.
-    // Semmelweis Insight III 308801821 slot 6 carries
-    // `60033#100#205#75#8` — i.e. for each 10% of MaxHP missing
-    // on the caster, grant +7.5% AddDmg (attr 205), capped at 8
-    // stacks (60% total). The `AttrFix` wildcard below would catch
-    // this by name and only read the first two args, so we route
-    // by id before the wildcard.
+    
     if id == 60033 {
         let step_permille = p1;
         let attr_id = p2;
@@ -95,17 +60,7 @@ pub fn parse_behavior(raw: &str) -> BehaviorType {
             max_stacks,
         };
     }
-    // `SettleDotAndCostDotDuration` (skill_behavior id 60073) — fires on
-    // each enemy carrying skill 30980151 as a round-start passive (delivered
-    // via `magic_circle 22100003.enemy_skills`). Per the in-game text on
-    // 30980151: "At the start of the round, resolve 1 round of [Poison]
-    // effects." The carrier walks its own Poison/DeadlyPoison buffs, deals
-    // `caster.atk × permille / 1000` Genesis damage per stack, and
-    // decrements `duringTime` by `rounds` — except when the carrier also
-    // holds a `LockPoison(810)` buff (Tuesday's 30980131 lock-duration
-    // debuff also applied by the array via `enemy_buff`), in which case the
-    // damage still emits but `duringTime` stays pinned. LIVE encodes 60073
-    // as `60073#<rounds>` (30980151 slot 1 = `60073#1` = 1 round per tick).
+    
     if id == 60073 {
         return BehaviorType::SettleDotAndCostDotDuration { rounds: p1 };
     }
@@ -127,12 +82,6 @@ pub fn parse_behavior(raw: &str) -> BehaviorType {
             count: p1,
         };
     }
-    // `OriginDamageByAttrAndBuffGroupSize` (skill_behavior id 60127)
-    // encodes a bonus damage emission of
-    // `caster.attr[attr_id] × permille × buff_group_stacks_on_target / 1000`.
-    // Tuesday's Lock-Sound mass attack carries
-    // `30980131 slot 2 = '60127#1#102#300#7'` —
-    // `caster ATK × 30% × Poison stacks on target` per her in-game text.
     if id == 60127 {
         let mode = p1;
         let attr_id = p2;
@@ -168,17 +117,7 @@ pub fn parse_behavior(raw: &str) -> BehaviorType {
             rate: p1,
             granted_buff_id: parts.get(3).and_then(|v| v.parse().ok()).unwrap_or(0),
         },
-        // Kakania's Empathy Genesis bonus family. Both Subconscious's
-        // basic (`60038#multiplier`) and the Insight III heal-trigger
-        // reactive (skill 30800161/2/3 with `60052#multiplier`) share
-        // the same skill_behavior `type`. Per the in-game ability
-        // description for Subconscious: "1-target attack. Deals X%
-        // Mental DMG plus (Current [Empathy] × multiplier%) Genesis
-        // DMG." The Insight III variant fires the same bonus
-        // emission off a heal trigger via the standard
-        // OriginDamageFromInjuryBank path. Multiplier is permille
-        // (1800 / 2200 / 2600 / 1000 / 1200 across Lv1-3 + Insight
-        // ranks).
+        
         "OriginDamageFromInjuryBankBuff" => BehaviorType::OriginDamageFromInjuryBank {
             multiplier_permille: p1,
         },
@@ -377,7 +316,7 @@ pub fn parse_behavior(raw: &str) -> BehaviorType {
         },
         _ => {
             if !behavior_type.is_empty() {
-                tracing::warn!("Unhandled behavior type: {} (id={})", behavior_type, id);
+                //tracing::warn!("Unhandled behavior type: {} (id={})", behavior_type, id);
             }
             BehaviorType::Unknown {
                 raw: raw.to_string(),

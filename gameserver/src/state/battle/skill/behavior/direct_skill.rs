@@ -27,9 +27,9 @@ use sonettobuf::{ActEffect, FightStep, effect_type_enum::EffectType, fight_step}
 
 use super::super::cache::{SKILL_CACHE, resolve_skill_effect_id};
 use super::action::{ActionCtx, BehaviorAction};
-use super::damage;
-use super::precast::{collect_precast_skills_for_caster, infer_precast_per_decr_seed_cap};
-use super::random;
+use crate::state::battle::mechanics::injury_counter::is_damage_effect_type;
+use crate::state::battle::skill::precast::{collect_precast_skills_for_caster, infer_precast_per_decr_seed_cap};
+use crate::state::battle::skill::random;
 use crate::state::battle::fight_step::ActEffectBuilder;
 use crate::state::battle::skill::PhaseFilter;
 use crate::state::battle::skill::phase::TriggerState;
@@ -139,7 +139,7 @@ fn execute_direct_use_big_skill(ctx: &mut ActionCtx<'_, '_>) -> Result<Vec<ActEf
         .max(0);
     let current_ex = ctx
         .managers
-        .ex_point_mgr
+        .entity_mgr
         .get_ex_point(ctx.caster_uid)
         .max(0);
     // Live wrapper semantics: consume from EX-skill cost lane when
@@ -163,7 +163,7 @@ fn execute_direct_use_big_skill(ctx: &mut ActionCtx<'_, '_>) -> Result<Vec<ActEf
         consume
     };
     ctx.managers
-        .ex_point_mgr
+        .entity_mgr
         .set_recent_decr_ex_point(ctx.caster_uid, consume);
 
     // Some wrapper cards first fire a passive-side helper skill before
@@ -214,12 +214,12 @@ fn execute_direct_use_big_skill(ctx: &mut ActionCtx<'_, '_>) -> Result<Vec<ActEf
     }
     if consume != initial_consume {
         ctx.managers
-            .ex_point_mgr
+            .entity_mgr
             .set_recent_decr_ex_point(ctx.caster_uid, consume);
     }
 
     if consume > 0 {
-        // Don't mutate ex_point_mgr directly — the ExPointChange effect
+        // Don't mutate entity_mgr directly — the ExPointChange effect
         // below is applied by calculate_mgr::play_effect_add_ex_point
         // during play_step_data. Direct mutation + replay = double-apply.
         out.push(ActEffectBuilder::ex_point_change(ctx.caster_uid, -consume));
@@ -272,7 +272,7 @@ fn execute_direct_use_big_skill(ctx: &mut ActionCtx<'_, '_>) -> Result<Vec<ActEf
             .map(|s| {
                 s.act_effect
                     .iter()
-                    .any(|ae| damage::is_damage_effect_type(ae.effect_type))
+                    .any(|ae| is_damage_effect_type(ae.effect_type.unwrap_or(0)))
             })
             .unwrap_or(false)
     };
@@ -314,12 +314,12 @@ fn execute_direct_use_big_skill(ctx: &mut ActionCtx<'_, '_>) -> Result<Vec<ActEf
     out.append(&mut ex);
 
     if refund > 0 {
-        // Don't mutate ex_point_mgr directly — calculate_mgr replays
+        // Don't mutate entity_mgr directly — calculate_mgr replays
         // the ExPointChange below. See note above on consume.
         out.push(ActEffectBuilder::ex_point_change(ctx.caster_uid, refund));
     }
     ctx.managers
-        .ex_point_mgr
+        .entity_mgr
         .clear_recent_decr_ex_point(ctx.caster_uid);
 
     Ok(out)

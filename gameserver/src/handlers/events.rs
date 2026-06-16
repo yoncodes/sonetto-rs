@@ -15,7 +15,7 @@ use sonettobuf::{
     Act101Info, Act160GetInfoReply, Act165GetInfoReply, Act212BonusNo, Act212InfoNo, CmdId,
     Get101BonusReply, Get101BonusRequest, Get101InfosReply, Get101InfosRequest,
     GetAct125InfosReply, GetAct125InfosRequest, GetAct208InfoReply, GetAct209InfoReply,
-    GetAct212InfoReply, GetActivityInfosReply,
+    GetAct212InfoReply, GetActivityInfosReply, GetActivityInfosWithParamReply,
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -29,6 +29,20 @@ pub async fn on_get_activity_infos(
         req.up_tag,
         CmdId::GetActivityInfosCmd,
         GetActivityInfosReply,
+        "activity/activity_infos.json"
+    );
+    Ok(())
+}
+
+pub async fn on_get_activity_infos_with_param(
+    ctx: Arc<Mutex<ConnectionContext>>,
+    req: ClientPacket,
+) -> Result<(), AppError> {
+    send_reply!(
+        ctx,
+        req.up_tag,
+        CmdId::GetActivityInfosWithParamCmd,
+        GetActivityInfosWithParamReply,
         "activity/activity_infos.json"
     );
     Ok(())

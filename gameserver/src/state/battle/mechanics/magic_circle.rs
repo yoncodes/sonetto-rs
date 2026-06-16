@@ -112,7 +112,7 @@ pub fn add_magic_circle(
                 let mut event_ctx = EventContext {
                     fight: &mut synthetic_fight,
                     buff_mgr: &mut ctx.managers.buff_mgr,
-                    ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+                    entity_mgr: &mut ctx.managers.entity_mgr,
                     bloodtithe: &mut synthetic_bloodtithe,
                 };
                 drain_to_fight_steps(queue.drain(), &mut event_ctx)

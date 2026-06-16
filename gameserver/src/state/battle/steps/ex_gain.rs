@@ -4,7 +4,6 @@ use crate::state::battle::{
     BehaviorType,
     context::FightContext,
     fight_step::{ActEffectBuilder, FightStepBuilder},
-    manager::round_mgr::FightRoundMgr,
     round::RoundState,
     skill::cache::{SKILL_CACHE, resolve_skill_effect_id},
     types::ex_point::ExPointType,
@@ -26,7 +25,7 @@ pub(crate) fn pre_operation_ex_gain(
     }
 
     let card_index = oper.param1.unwrap_or(1).saturating_sub(1) as usize;
-    let card = state.player_deck.get(card_index)?;
+    let card = state.selected_cards.get(card_index)?;
     let caster_uid = card.uid.unwrap_or(0);
     if caster_uid <= 0 || card.temp_card.unwrap_or(false) {
         return None;
@@ -68,7 +67,7 @@ pub(crate) fn pre_operation_ex_gain(
         return None;
     }
 
-    ctx.managers.ex_point_mgr.add_ex_point(caster_uid, 1);
+    ctx.managers.entity_mgr.add_ex_point(caster_uid, 1);
     Some(
         FightStepBuilder::effect()
             .with(ActEffectBuilder::ex_point_change(caster_uid, 1))
@@ -91,7 +90,6 @@ pub(crate) fn skill_suppresses_pre_operation_ex(skill_id: i32) -> bool {
 }
 
 pub(crate) fn standard_action_ex_gain_for_uid(
-    _mgr: &FightRoundMgr,
     ctx: &mut FightContext<'_>,
     caster_uid: i64,
 ) -> Option<FightStep> {
@@ -110,7 +108,7 @@ pub(crate) fn standard_action_ex_gain_for_uid(
         return None;
     }
 
-    ctx.managers.ex_point_mgr.add_ex_point(caster_uid, 1);
+    ctx.managers.entity_mgr.add_ex_point(caster_uid, 1);
     Some(
         FightStepBuilder::effect()
             .with(ActEffectBuilder::ex_point_change(caster_uid, 1))

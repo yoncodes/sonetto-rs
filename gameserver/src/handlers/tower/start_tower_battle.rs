@@ -1,8 +1,7 @@
 use crate::error::AppError;
 use crate::network::packet::ClientPacket;
 use crate::state::{
-    ActiveBattle, BattleContext, ConnectionContext, apply_opening_deck, create_battle,
-    default_max_ap, generate_initial_deck,
+    ActiveBattle, BattleContext, ConnectionContext, create_battle, default_max_ap,
 };
 use config::configs;
 use prost::Message;
@@ -78,27 +77,15 @@ pub async fn on_start_tower_battle(
         max_ap,
     };
 
-    let mut card_push = generate_initial_deck(&pool, player_id, &fight_group, max_ap).await?;
+    let seed = (player_id as u64) ^ (episode_id as u64) ^ 0xA11C;
+    let (initial_round, mut fight_data_mgr) =
+        create_battle(&pool, battle_ctx, &fight_group, seed).await?;
+        
+    let mut card_push = fight_data_mgr.initial_card_push.take().unwrap_or_default();
+    card_push.card_group = fight_data_mgr.managers.deck_mgr.player_hand.clone();
 
-    // Initial round should use raw dealt cards.
-    let card_deck = card_push.deal_card_group.clone();
-
-    let (initial_round, fight_data_mgr, ai_deck) =
-        create_battle(&pool, battle_ctx, &fight_group, card_deck.clone()).await?;
-    // Authoritative post-start deck = pushed opening hand + opening temp/special additions.
-    let mut push_round = initial_round.clone();
-    push_round.team_a_cards1 = card_push.card_group.clone();
-    let final_cards = apply_opening_deck(&mut push_round);
-    card_push.card_group = final_cards.clone();
-
-    let fight_snapshot = fight_data_mgr
-        .pre_fight
-        .clone()
-        .unwrap_or_else(|| fight_data_mgr.fight().clone()); // pre-sync fight
-    // intial fight object with no passive changes
-
-    let fight_for_battle = fight_data_mgr.fight().clone(); // post-sync fight
-    // final fight object with passive changes applied
+    let fight_snapshot = fight_data_mgr.pre_fight.clone()
+        .unwrap_or_else(|| fight_data_mgr.fight().clone());
 
     {
         let mut conn = ctx.lock().await;
@@ -110,17 +97,11 @@ pub async fn on_start_tower_battle(
             chapter_id,
             difficulty: Some(difficulty),
             talent_plan_id: Some(talent_plan_id),
-            fight: Some(fight_for_battle),
-            current_round: 1,
-            act_point: max_ap,
-            power: 15,
-            current_deck: final_cards,
             fight_group: Some(fight_group.clone()),
             is_replay: None,
             replay_episode_id: None,
             fight_id: Some(chrono::Utc::now().timestamp_millis()),
             multiplication: None,
-            ai_deck,
             fight_data_mgr: Some(fight_data_mgr),
         });
     }

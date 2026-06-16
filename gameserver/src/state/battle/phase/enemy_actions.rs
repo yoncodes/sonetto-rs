@@ -22,20 +22,21 @@ use sonettobuf::{ActEffect, FightStep, fight_step};
 use crate::state::battle::{
     context::FightContext,
     event_queue::{self, BattleEvent, HostEventAccumulator, HostLane, HostSide},
-    manager::{card_mgr::FightCardMgr, round_mgr::FightRoundMgr, wave_mgr::WaveMgr},
+    manager::{round_mgr::{apply_step_and_maybe_sync, deleted_buff_ids_from_delta, expand_trigger_chain}, wave_mgr::WaveMgr},
     mechanics::magic_circle,
     passives::collector::CollectedPassives,
+    operation::ai_executor,
     round::RoundState,
+    skill::SkillExecutor,
     step_walker,
-    steps::{ex_gain, trigger_embed},
+    steps::{trigger_embed},
     trigger::passes::sync_blood_value_baseline,
 };
 
 pub(crate) async fn run(
-    mgr: &FightRoundMgr,
     rng: &mut StdRng,
     ctx: &mut FightContext<'_>,
-    card_mgr: &mut FightCardMgr,
+    executor: &mut SkillExecutor,
     state: &mut RoundState,
     collected: &CollectedPassives,
     steps: &mut Vec<FightStep>,
@@ -44,9 +45,10 @@ pub(crate) async fn run(
     sync_blood_value_baseline(battle_id, 1, ctx.mechanics.bloodtithe.get_value(1));
     sync_blood_value_baseline(battle_id, 2, ctx.mechanics.bloodtithe.get_value(2));
     state.enemy_skill_actors.clear();
-    let ai_steps = card_mgr.execute_ai_turn(rng, ctx, state).await?;
+    let ai_steps = ai_executor::execute_ai_operations(executor, rng, ctx, state).await?;
     let mut previous_negative_skill_host: Option<(i64, i32)> = None;
     for step in ai_steps {
+        tracing::info!("enemy plays: uid={} skill_id={}", step.from_id.unwrap_or(0), step.act_id.unwrap_or(0));
         let current_negative_skill_host =
             if step.act_type == Some(fight_step::ActType::Skill as i32) {
                 step.from_id
@@ -73,7 +75,7 @@ pub(crate) async fn run(
             && (previous_negative_skill_host != current_negative_skill_host || act_id != 114300811)
         {
             state.enemy_skill_actors.insert(caster_uid);
-            ex_gain::standard_action_ex_gain_for_uid(mgr, ctx, caster_uid)
+            ctx.managers.entity_mgr.on_use_card(caster_uid)
         } else {
             None
         };
@@ -82,15 +84,15 @@ pub(crate) async fn run(
         }
 
         let buff_snapshot_before = ctx.managers.buff_mgr.all_instances();
-        mgr.apply_step_and_maybe_sync(ctx, &step, true)?;
+        apply_step_and_maybe_sync(ctx, &step, true)?;
         let buff_snapshot_after = ctx.managers.buff_mgr.all_instances();
         let runtime_deleted_buff_ids =
-            mgr.deleted_buff_ids_from_delta(&buff_snapshot_before, &buff_snapshot_after);
+            deleted_buff_ids_from_delta(&buff_snapshot_before, &buff_snapshot_after);
         let is_embedded_skill_host = step.act_type == Some(fight_step::ActType::Skill as i32)
             && step.from_id.unwrap_or(0) >= 0;
         if !is_embedded_skill_host {
             let expanded_steps =
-                mgr.expand_trigger_chain(ctx, collected, &step, &runtime_deleted_buff_ids);
+                expand_trigger_chain(ctx, collected, &step, &runtime_deleted_buff_ids);
             steps.extend(expanded_steps);
             previous_negative_skill_host = current_negative_skill_host;
             continue;
@@ -108,7 +110,7 @@ pub(crate) async fn run(
             &mut accumulator,
         );
         let expanded_steps =
-            mgr.expand_trigger_chain(ctx, collected, &host_step, &runtime_deleted_buff_ids);
+            expand_trigger_chain(ctx, collected, &host_step, &runtime_deleted_buff_ids);
         // Splice combat triggers as direct children of the host wrapper.
         // Same fix applied to `phase/player_actions.rs` in `4cdf572d` —
         // the `host_act_id - 20` heuristic was dead code (0/18 enemy

@@ -1,13 +1,9 @@
-use crate::state::battle::{
-    heroes::pickles,
-    skill::cache::{SKILL_CACHE, resolve_skill_effect_id},
-    types::condition::ConditionType,
-};
+use crate::state::battle::heroes::pickles;
 use config::configs;
 use sonettobuf::Fight;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CollectedPassives {
     pub attacker: Vec<(i64, Vec<i32>)>,
     pub defender: Vec<(i64, Vec<i32>)>,
@@ -66,69 +62,9 @@ impl CollectedPassives {
     }
 }
 
-pub fn collect(fight: &Fight, battle_id: i32) -> CollectedPassives {
-    let battle_passives = collect_battle_passives(battle_id);
-    let battle_attacker: Vec<i32> = battle_passives
-        .attacker
-        .iter()
-        .copied()
-        .filter(|&sid| is_dedicated_battle_rule_skill(sid))
-        .collect();
-    let battle_defender: Vec<i32> = battle_passives
-        .defender
-        .iter()
-        .copied()
-        .filter(|&sid| is_dedicated_battle_rule_skill(sid))
-        .collect();
-
-    let attacker_rule_set: HashSet<i32> = battle_attacker.iter().copied().collect();
-    let defender_rule_set: HashSet<i32> = battle_defender.iter().copied().collect();
-
-    // Skills with addition_rule prefix=3 are defender-side rules (e.g. boss
-    // state cycle 530000151). The fight snapshot LIVE supplies often has
-    // them pre-listed in attacker.passive_skill too, but LIVE engine never
-    // fires them from attacker entities — only from defenders + nested
-    // inside boss skill chains. Strip the unfiltered defender-rule set
-    // (i.e. all addition_rule entries with prefix=3, not just the
-    // is_dedicated_battle_rule_skill subset) from attacker's regular sweep
-    // so we match LIVE shape.
-    let all_defender_only_rules: HashSet<i32> = battle_passives.defender.iter().copied().collect();
-    let attacker_exclusion: HashSet<i32> = attacker_rule_set
-        .iter()
-        .chain(all_defender_only_rules.iter())
-        .copied()
-        .collect();
-
-    CollectedPassives {
-        // Battle addition-rule passives are emitted in a dedicated pre-pass.
-        // Exclude them from normal passive list to prevent merge/duplication.
-        attacker: collect_side_passives(fight, true, Some(&attacker_exclusion)),
-        defender: collect_side_passives(fight, false, Some(&defender_rule_set)),
-        battle_attacker,
-        battle_defender,
-    }
-}
-
-fn is_dedicated_battle_rule_skill(skill_id: i32) -> bool {
-    let effect_id = resolve_skill_effect_id(skill_id);
-    let Some(behaviors) = SKILL_CACHE.get(&effect_id) else {
-        return false;
-    };
-    if behaviors.is_empty() {
-        return false;
-    }
-
-    // Dedicated handling covers battle-rule style passives:
-    // - target-career gated rules (e.g. 70015)
-    // - unconditional one-shot rules (e.g. 71008)
-    let has_target_career = behaviors
-        .iter()
-        .any(|b| matches!(b.condition, ConditionType::TargetCareer { .. }));
-    let all_unconditional = behaviors
-        .iter()
-        .all(|b| matches!(b.condition, ConditionType::None));
-
-    has_target_career || all_unconditional
+pub fn collect(_fight: &Fight, _battle_id: i32) -> CollectedPassives {
+    // Battle rules are managed by RuleMgr; passive collection is no longer needed here.
+    CollectedPassives::default()
 }
 
 fn collect_side_passives(

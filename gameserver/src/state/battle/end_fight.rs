@@ -20,7 +20,7 @@ pub struct BattleStats {
 pub async fn send_end_fight_push(
     ctx: Arc<Mutex<ConnectionContext>>,
     fight_id: i64,
-    fight_result: i32, // 1 = win, 2 = lose
+    fight_result: i32, // 0 = lose, 1 = win, 2 = turn_exhausted
     fight_group: FightGroup,
     attacker_stats: Vec<BattleStats>,
     defender_stats: Vec<BattleStats>,

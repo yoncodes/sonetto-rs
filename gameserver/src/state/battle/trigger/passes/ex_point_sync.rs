@@ -116,7 +116,7 @@ impl TriggerPass for ExPointSyncPass {
                     let mut event_ctx = EventContext {
                         fight: ctx.fight,
                         buff_mgr: &mut ctx.managers.buff_mgr,
-                        ex_point_mgr: &mut ctx.managers.ex_point_mgr,
+                        entity_mgr: &mut ctx.managers.entity_mgr,
                         bloodtithe: &mut ctx.mechanics.bloodtithe,
                     };
                     act_effect.extend(drain_to_fight_steps(queue.drain(), &mut event_ctx));
@@ -125,7 +125,7 @@ impl TriggerPass for ExPointSyncPass {
                 act_effect.push(ActEffectBuilder::effect_none_with_num(*target_uid, 0));
 
                 if ex_gain != 0 {
-                    // Don't mutate ex_point_mgr directly — the emitted ExPointChange
+                    // Don't mutate entity_mgr directly — the emitted ExPointChange
                     // effect is applied by calculate_mgr::play_effect_add_ex_point during
                     // play_step_data. Direct mutation + replay = double-apply.
                     act_effect.push(ActEffectBuilder::moxie_change(buff.from_uid, ex_gain));

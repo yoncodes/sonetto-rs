@@ -16,14 +16,14 @@ use super::EffectContext;
 /// Skill behavior: Damage — standard damage from caster ATK at a given rate.
 pub fn apply(
     ctx: &mut EffectContext,
-    pending_attr: Option<&HashMap<(i64, i32), i32>>,
+    _pending_attr: Option<&HashMap<(i64, i32), i32>>,
     rate: i32,
     skill_id: i32,
 ) -> Vec<ActEffect> {
     let mut effects = crate::state::battle::skill::damage::calculate_damage(
         ctx.fight(),
         ctx.buff_mgr(),
-        pending_attr,
+        ctx.entity_mgr(),
         ctx.caster_uid(),
         ctx.target_uid(),
         rate,
